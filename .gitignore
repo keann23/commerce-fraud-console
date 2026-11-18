@@ -11,3 +11,4 @@ dbt/.user.yml
 logs/
 data/splunk/
 data/ieee/
+notes/

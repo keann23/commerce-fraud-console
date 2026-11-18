@@ -7,9 +7,19 @@ from guide import PURPOSE, learning_mode, page_intro, tip
 from src.evaluate import evaluate_all, overview
 
 setup_page("Overview")
-st.title("Commerce Fraud Investigator Console")
-st.caption("A fraud analyst console and learning simulator for an Adobe-style subscription business. "
+st.title("The hidden cost of stopping fraud")
+st.markdown("**How many honest customers does a \"just block it\" fraud policy turn away, and can graduated "
+            "responses (a 3DS or MFA check instead of a block) win them back without letting fraud through?**")
+st.caption("A fraud investigation console and simulator for a Creative Cloud-style subscription business. "
            "All data is synthetic.")
+c1, c2, c3 = st.columns(3)
+c1.metric("Honest customers lost: default line", "0", help="Alert line at score 60: 99.6% of attacks caught.")
+c2.metric("…chasing the last 0.2% of fraud, block-only", "288",
+          help="Alert line lowered to 40: stops only $20 more fraud.")
+c3.metric("…same alerts, graduated response", "~14", help="95% fewer honest customers lost than block-only.")
+st.page_link("pages/5_Friction_Tradeoff.py", label="Explore the trade-off yourself →", icon="⚖️")
+st.caption("Figures for the original seed-42 world; launching attacks in Attack Mode changes the live numbers below.")
+st.divider()
 with st.expander("🎯 What this simulator is for", expanded=learning_mode()):
     st.markdown(PURPOSE)
     st.markdown("**Suggested path:** Learning Guide → Overview → Attack Mode → Case Queue → Case File → "

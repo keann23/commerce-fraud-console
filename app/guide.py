@@ -10,6 +10,14 @@ Each guide has:
 import streamlit as st
 
 PURPOSE = """
+**The question behind it**
+
+Fraud teams are graded on how much fraud they stop. The cost that rarely gets measured is the honest
+customers they turn away, and in a subscription business a wrongly blocked customer often cancels, so you
+lose every renewal after it. This console was built to measure that cost: every attack is injected
+together with honest customers who look like it, so you can count exactly how many good customers each
+policy hurts, and compare blocking with gentler checks on the **Friction Tradeoff** screen.
+
 **Why this simulator exists**
 
 Fraud analysts rarely get to see the whole picture at once. In a real company the attack happens in

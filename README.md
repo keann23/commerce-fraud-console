@@ -1,14 +1,43 @@
-# Commerce Fraud Investigator Console
+# The hidden cost of stopping fraud: false declines in a subscription business
 
 **▶ Live demo: https://commerce-fraud-console.streamlit.app** (first load can take a minute if the app was asleep)
 
-A working fraud analyst console for a simulated Adobe-style subscription business. It generates realistic customers, payments, logins, trials, product usage and disputes; injects four real-world abuse patterns on demand; detects them in plain SQL; and recommends a response that balances fraud loss against customer friction.
+## The question
 
-> **All data in this project is synthetic.** It is generated with Faker and a fixed random seed. No real people, cards, accounts or companies' data are involved. "Adobe-style" describes the business model being simulated (Creative Cloud-like plans, trials, student pricing), not Adobe data.
+Fraud teams are usually graded on one number: how much fraud they stopped. The cost that rarely shows up on a dashboard is the **honest customers they turned away**: a traveler whose login looked "foreign", a family sharing a laptop and a card, a student on a campus network. For a subscription business that cost compounds, because a customer you wrongly block doesn't just lose one sale; they cancel, and you lose every renewal after it.
+
+So this project asks: **how many honest customers does a "just block it" fraud policy really cost, and can graduated responses (a 3DS / MFA / CAPTCHA check instead of a block) get them back without letting more fraud through?**
+
+## What I found
+
+I built a simulated Creative Cloud-style business (20,000 customers, 120 days), injected four real attack patterns *together with honest customers built to look like each attack*, and scored everything with SQL detectors whose mistakes I can count exactly.
+
+| Alert line (risk score) | Attacks caught | Fraud stopped | Honest customers lost: **block-only** | Honest customers lost: **graduated** |
+|---|---|---|---|---|
+| 60 (default) | 99.6% | $103,312 | 0 | 0 |
+| 40 | 99.8% | $103,332 | **288** (~$59.8k/month revenue) | **~14** (~$3.0k/month) |
+| 30 | 100% | $103,392 | **421** | **~38** |
+
+1. **The last sliver of fraud is where honest customers get hurt.** Moving the alert line from 60 to 40 stops just **$20** more fraud. Under block-only it turns away **288** honest customers.
+2. **Graduated friction makes aggressive settings survivable.** With the same alerts, challenging borderline cases instead of blocking them loses **~95% fewer** honest customers (288 → ~14).
+3. **It isn't free.** A challenge sometimes lets an attacker through, so at the default line the graduated policy stops about **$112 less** fraud than blocking. That trade is the decision a fraud lead actually has to make, and the [Friction Tradeoff](https://commerce-fraud-console.streamlit.app/Friction_Tradeoff) screen lets you make it with a slider.
+4. **On real data the trade-off is the whole game.** In my synthetic world attacks and honest customers separate cleanly at 60. On 590,540 real transactions ([IEEE-CIS](docs/ieee_validation.md)) the same kind of signals overlap heavily (AUC 0.67), so *every* useful threshold hurts some honest customers. That is exactly where graduated responses matter most.
+
+*Assumptions, stated so they can be argued with:* a challenge loses ~5% of the honest customers who get it and stops ~90% of attackers; a block loses 100%. These are estimates, not measurements, and they live in one place ([`sql/response_ladder.sql`](sql/response_ladder.sql)).
+
+> **All data in the simulation is synthetic.** It is generated with Faker and a fixed random seed. No real people, cards, accounts or companies' data are involved. "Creative Cloud-style" / "Adobe-style" describes the business model being simulated (plans, trials, student pricing), not Adobe data.
 
 ![Overview](docs/img/overview.jpg)
 
-## The problem
+## Decisions I made, and why
+
+- **Every attack ships with honest lookalikes.** A detector tested only on attacks always looks perfect. Each injector also creates the customers a careless rule would hurt (a campus network starting trials together, a customer retrying a failing card, a traveler with a new phone, a real stolen-card dispute), so false declines are *measured*, not assumed.
+- **I count honest customers lost, not just alerts.** An alert that ends in a challenge the customer passes is very different from a block. The response ladder gives every action a cost, so policies can be compared in customers and dollars.
+- **Victims and paying customers are never blocked.** An account-takeover victim gets an MFA check and a rollback; a customer filing a dubious dispute gets the dispute fought with evidence. A test enforces this.
+- **Detection never sees the answers.** Only the evaluation code reads which entities were attacks; a test checks that no detection SQL touches that table.
+- **I kept my mistakes in the record.** On the real IEEE-CIS data, two of my first-pass signals pointed the wrong way. The report keeps those results and explains why they failed, rather than quietly replacing them.
+
+## How fraud shows up here
 
 Subscription businesses lose money in four very different ways, and each needs a different response:
 
@@ -145,9 +174,9 @@ docs/explainers.md              plain-English explainer and interview Q&A for ev
 
 ## Resume bullets
 
-- Built a commerce fraud investigation console (Python, SQL, DuckDB, Streamlit) simulating an Adobe-style subscription business, detecting card testing, account takeover, trial abuse and friendly fraud at 99 to 100% recall with 0% false positives on ~850 deliberately built legit lookalikes
-- Collapsed 3,983 "unique" trial accounts into 3,588 real identities via email normalization and device/card graph linking in SQL, exposing 9.9% trial inflation; 266 abusive accounts traced to 10 people
-- Designed a response ladder (allow, step-up, review, block) that cut false declines 95% (288 → 14) versus block-only at equal fraud capture
+- Investigated the hidden cost of fraud controls in a simulated subscription business: showed that pushing a block-only policy for the last 0.2% of fraud turned away 288 honest customers to stop $20 more fraud, and that graduated responses (3DS/MFA step-up instead of blocks) cut those false declines 95% at the same alert rate
+- Built the test bed to measure it (Python, SQL, DuckDB, Streamlit): four attack patterns, each injected alongside ~850 honest lookalike customers, with SQL detectors at 99 to 100% recall and 0% false positives at the default threshold
+- Validated the signals on 590k real IEEE-CIS transactions: the account-takeover signal carried over (2.2x fraud lift), and diagnosed two proxies that failed because of what the anonymized fields actually mean
 
 ## Phase 2
 
