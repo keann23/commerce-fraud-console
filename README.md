@@ -157,7 +157,7 @@ docs/explainers.md              plain-English explainer and interview Q&A for ev
 | **Splunk SPL** (`splunk/`) | JSON event-log export (one sourcetype per stream), `props.conf`, and SPL versions of all four detections, plus a SQL → SPL concept map | Export tested; SPL written but not yet run in a live Splunk |
 | **Weekly intel brief** (Intel Brief screen, `make brief`) | Weekly metrics in SQL, written up by a deterministic template or, with an `ANTHROPIC_API_KEY`, by Claude (`claude-opus-5-5`) from the same aggregate numbers only | Done; the Claude writer is tested with a stub client |
 | **Threat memo** ([`docs/threat_memo.md`](docs/threat_memo.md)) | Ranked commercial-abuse threats for a creative-software subscription business, with signals, gaps and a 30/60/90 plan | Done |
-| **IEEE-CIS validation** (`src/ieee/`, `sql/ieee/`, `make ieee`) | Maps each simulator signal to a real-data proxy and measures lift, coverage and ranking on the Kaggle IEEE-CIS dataset | Pipeline tested on a fixture; needs the Kaggle download to produce real results |
+| **IEEE-CIS validation** ([`docs/ieee_validation.md`](docs/ieee_validation.md), `make ieee`) | Maps each simulator signal to a real-data proxy and measures lift, coverage and ranking on 590,540 real Kaggle IEEE-CIS transactions | Done. **New device on a known customer** (the ATO idea) has 2.2x lift; 2 of 7 first-pass proxies pointed the wrong way because of what anonymized columns mean. Corrected proxies raise the combined score's AUC from 0.57 to 0.67 on the latest 40% of transactions |
 
 ```bash
 pip install -r requirements-dev.txt   # dbt-core + dbt-duckdb

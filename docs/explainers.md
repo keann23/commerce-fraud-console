@@ -232,9 +232,13 @@ Short answer: give it only computed facts, forbid figures outside them, show the
 
 **How it maps.** There's no customer id, login or dispute data, so each idea gets its closest proxy: a reconstructed customer id (card1 + addr1 + the day the card was first seen), card velocity in the previous hour, micro amounts, anonymous email domains, a new device for a known customer, amount spikes, cards first seen today, and buyer/recipient email mismatch. For each signal: lift over the base fraud rate, and what share of fraud it covers. For a fixed-weight combined score: AUC, plus precision and recall at a 1/5/10% alert budget.
 
-**Status.** Tested end to end on a small fake fixture with planted signals. Real results need the Kaggle download (account + accepting the competition rules); `make ieee` then writes `docs/ieee_validation.md`.
+**Results (590,540 real transactions, 3.5% fraud; full report in `docs/ieee_validation.md`).**
+- **Transferred:** a new device on a known customer (the ATO idea) has 2.18x lift; micro amounts 1.76x, though rare.
+- **Didn't transfer at first:** card velocity (1.13x), "anonymous" email (0.76x) and buyer/recipient email mismatch (0.82x). Diagnostics showed these were *mapping* errors: `card1` is shared by up to ~15,000 transactions, so it isn't one card; `anonymous.com` behaves like a mainstream provider; and the risk is having a recipient email at all, not a mismatch.
+- **Corrected proxies** (customer-level velocity 2.07x, real privacy providers 6.34x, recipient email present 2.76x) lift the fixed-weight score's AUC from 0.57 to 0.67 on the latest 40% of transactions. Those corrections were chosen after seeing the data, so this is reported as exploratory, not as a clean out-of-sample win.
+- The first-pass results were fixed before looking at the data and are kept as the headline, misses included.
 
 **One limitation.** `isFraud` in IEEE-CIS is chargeback-based, so it mixes true fraud and friendly fraud; and the anonymized columns only approximate customers and devices. Lift here supports an idea; it doesn't calibrate the simulator's thresholds.
 
 **Likely interview question.** *"Your project is synthetic, so how do you know any of it works?"*
-Short answer: the synthetic data proves the logic separates attacks from realistic lookalikes; the IEEE-CIS replication checks that the same signals carry lift on real labelled fraud. Then I'd be honest that thresholds would need re-tuning on the company's own data.
+Short answer: the synthetic data proves the logic separates attacks from realistic lookalikes; on real IEEE-CIS data the account-takeover signal carried over at 2.2x lift, and two proxies failed, which taught me to check what a field actually means before trusting a rule built on it. I kept the failed first pass in the report rather than quietly swapping in the fixed version.
