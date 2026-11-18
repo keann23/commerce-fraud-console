@@ -1,0 +1,35 @@
+``` CARD TESTING: SPL version of sql/detect/card_testing.sql
+    Per IP and per device, find the worst rolling 10-minute window of payment attempts and score it:
+    velocity 20 + card diversity 20 + declines 40 (only once 5+ attempts) + micro amounts 10.
+    Difference from SQL: the shared-BIN / sequential-last4 bonus (10 pts) is approximated by BIN
+    concentration only. Run over All time, index=fraud. ```
+index=fraud sourcetype="fraud:payments" txn_type IN ("auth", "charge")
+| eval declined=if(result="declined", 1, 0)
+``` score every attempt twice: once for its IP, once for its device ```
+| eval entity=mvappend("ip:" . ip, "device:" . device_id)
+| mvexpand entity
+``` time_window needs events in global time order; the by-clause keeps entities apart ```
+| sort 0 _time
+| streamstats time_window=10m count AS attempts_10m dc(card_fingerprint) AS cards_10m
+      sum(declined) AS declines_10m median(amount) AS median_amount_10m dc(bin) AS bins_10m by entity
+| eval decline_rate_10m=round(declines_10m / attempts_10m, 3)
+``` keep each entity's single worst window ```
+| sort 0 entity -attempts_10m -cards_10m
+| dedup entity
+| eval velocity_pts=20 * min(attempts_10m / 15, 1),
+       card_pts=20 * min(cards_10m / 12, 1),
+       decline_pts=40 * min(decline_rate_10m / 0.7, 1) * min(attempts_10m / 5, 1),
+       amount_pts=case(median_amount_10m <= 2, 10, median_amount_10m <= 5, 5, true(), 0),
+       pattern_pts=if(cards_10m >= 5 AND bins_10m <= cards_10m / 2, 10, 0)
+| eval risk_score=round(min(velocity_pts + card_pts + decline_pts + amount_pts + pattern_pts, 100))
+| eval reason_codes=mvappend(
+        if(attempts_10m >= 10, "HIGH_VELOCITY", null()),
+        if(cards_10m >= 8, "MANY_DISTINCT_CARDS", null()),
+        if(decline_rate_10m >= 0.5 AND attempts_10m >= 5, "HIGH_DECLINE_RATE", null()),
+        if(median_amount_10m <= 2, "MICRO_AMOUNTS", null()),
+        if(pattern_pts > 0, "CONCENTRATED_BINS", null()))
+| eval recommended_action=case(risk_score >= 80, "block", risk_score >= 60, "step_up", true(), "allow")
+| rex field=entity "^(?<entity_type>[^:]+):(?<entity_id>.+)$"
+| where recommended_action != "allow"
+| table entity_type entity_id risk_score reason_codes recommended_action attempts_10m cards_10m decline_rate_10m median_amount_10m
+| sort 0 -risk_score

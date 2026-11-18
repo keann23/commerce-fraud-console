@@ -1,0 +1,36 @@
+``` FRIENDLY FRAUD: SPL version of sql/detect/friendly_fraud.sql
+    For every 'unauthorized' dispute: was the disputed purchase made from the same device and IP as
+    the customer's earlier approved purchases, by a long-standing account, and did they keep using
+    the product afterwards? Score: device 25 + IP 15 + tenure 10 + clean history 10 + usage 25 +
+    later logins 15. Difference from SQL: 'clean history' is 3+ earlier approved charges; the
+    no-earlier-disputes check is left out to keep the search short. Uses `map` (one sub-search per dispute) for the after-purchase windows, which
+    is fine at a few hundred disputes; at scale, precompute usage into a summary index. ```
+index=fraud sourcetype="fraud:payments" txn_type="charge" result="approved"
+| sort 0 _time
+``` history BEFORE each charge ```
+| streamstats current=f count AS prior_approved_charges by user_id
+| streamstats current=f count AS prior_same_device by user_id device_id
+| streamstats current=f count AS prior_same_ip by user_id ip
+| fillnull value=0 prior_approved_charges prior_same_device prior_same_ip
+| join type=inner txn_id
+    [ search index=fraud sourcetype="fraud:disputes" reason_category="unauthorized"
+      | eval filed_time=_time | table txn_id dispute_id filed_time status outcome ]
+| join type=left user_id
+    [ search index=fraud sourcetype="fraud:signups" | eval signup_time=_time | table user_id signup_time ]
+| eval txn_time=_time, tenure_days=floor((txn_time - signup_time) / 86400)
+| map maxsearches=2000 search="search index=fraud earliest=$txn_time$ latest=$filed_time$ user_id=\"$user_id$\"
+        (sourcetype=\"fraud:usage\" OR (sourcetype=\"fraud:logins\" success=\"true\" device_id=\"$device_id$\"))
+    | eval usage_minutes=if(sourcetype=\"fraud:usage\", minutes, 0), same_device_login=if(sourcetype=\"fraud:logins\", 1, 0)
+    | stats sum(usage_minutes) AS minutes_after sum(same_device_login) AS logins_same_device_after
+    | eval dispute_id=\"$dispute_id$\", user_id=\"$user_id$\", amount=$amount$, tenure_days=$tenure_days$,
+           prior_approved_charges=$prior_approved_charges$, prior_same_device=$prior_same_device$, prior_same_ip=$prior_same_ip$"
+| fillnull value=0 minutes_after logins_same_device_after
+| eval risk_score=min(if(prior_same_device > 0, 25, 0) + if(prior_same_ip > 0, 15, 0)
+        + case(tenure_days >= 180, 10, tenure_days >= 60, 5, true(), 0)
+        + if(prior_approved_charges >= 3, 10, 0)
+        + case(minutes_after >= 300, 25, minutes_after > 0, 10, true(), 0)
+        + if(logins_same_device_after > 0, 15, 0), 100)
+| eval recommended_action=if(risk_score >= 60, "review", "allow"),
+       action_detail=if(risk_score >= 60, "Represent with evidence; do not block the customer", "Accept the chargeback")
+| table dispute_id user_id amount risk_score recommended_action action_detail prior_same_device prior_same_ip tenure_days minutes_after logins_same_device_after
+| sort 0 -risk_score

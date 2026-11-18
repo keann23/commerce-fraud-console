@@ -1,0 +1,64 @@
+``` ACCOUNT TAKEOVER: SPL version of sql/detect/ato.sql
+    1) Mark anchor logins: successful, after a 14-day warm-up, from a device or country with no
+       earlier SUCCESSFUL login on that account, or right after an impossible-travel hop.
+    2) Carry the latest anchor forward on the account and score what the anchor device does in
+       the next 48 hours: password reset, email change after it, new card, big purchase.
+    Score: new device 10 + new country 15 + impossible travel 20 + reset 10 + email change after
+    reset 15 (8 without a reset) + card add 10 + purchase/upgrade 10 + device on 3+ accounts 10. ```
+index=fraud (sourcetype="fraud:logins" OR sourcetype="fraud:account_events"
+             OR (sourcetype="fraud:payments" txn_type="charge" result="approved"))
+| eval is_login=if(sourcetype="fraud:logins", 1, 0), ok_login=if(is_login=1 AND success="true", 1, 0)
+``` how many accounts has each device successfully logged into? (credential-stuffing crews reuse machines) ```
+| eval ok_user=if(ok_login=1, user_id, null())
+| eventstats dc(ok_user) AS accounts_on_device by device_id
+``` global time order: required by time_window below, and keeps each account's events in order ```
+| sort 0 _time
+``` history BEFORE this event: successful logins from this device / this country ```
+| streamstats current=f sum(ok_login) AS prior_ok_device by user_id device_id
+| streamstats current=f sum(ok_login) AS prior_ok_country by user_id country
+| fillnull value=0 prior_ok_device prior_ok_country
+``` impossible travel: speed from the previous login, haversine distance in km ```
+| eval login_lat=if(is_login=1, lat, null()), login_lon=if(is_login=1, lon, null()),
+       login_time=if(is_login=1, _time, null())
+| streamstats current=f last(login_lat) AS prev_lat last(login_lon) AS prev_lon last(login_time) AS prev_time by user_id
+| eval km=if(is_login=1 AND isnotnull(prev_lat),
+            2 * 6371 * asin(sqrt(pow(sin((lat - prev_lat) * pi() / 360), 2)
+              + cos(prev_lat * pi() / 180) * cos(lat * pi() / 180) * pow(sin((lon - prev_lon) * pi() / 360), 2))), null())
+| eval kmh=km / max((_time - prev_time) / 3600, 1 / 60)
+| eval impossible_hop=if(km > 500 AND kmh > 900, 1, 0)
+| eventstats min(_time) AS history_start
+| eval anchor=if(ok_login=1 AND _time >= history_start + 14 * 86400
+                 AND (prior_ok_device=0 OR prior_ok_country=0 OR impossible_hop=1), 1, 0)
+| eval anchor_time=if(anchor=1, _time, null()), anchor_device=if(anchor=1, device_id, null()),
+       anchor_new_device=if(anchor=1 AND prior_ok_device=0, 1, null()),
+       anchor_new_country=if(anchor=1 AND prior_ok_country=0, 1, null()),
+       anchor_reach=if(anchor=1, accounts_on_device, null())
+``` an impossible hop on a failed login just before the anchor still counts (crews guess first) ```
+| streamstats time_window=2h max(impossible_hop) AS recent_hop by user_id
+| eval anchor_impossible=if(anchor=1, recent_hop, null())
+| streamstats last(anchor_time) AS a_time last(anchor_device) AS a_device last(anchor_new_device) AS a_new_device
+              last(anchor_new_country) AS a_new_country last(anchor_impossible) AS a_impossible last(anchor_reach) AS a_reach
+              by user_id
+| where isnotnull(a_time) AND _time >= a_time AND _time <= a_time + 48 * 3600 AND device_id = a_device
+| eval reset_time=if(event_type="password_reset", _time, null()),
+       email_time=if(event_type="email_change", _time, null()),
+       card_time=if(event_type="payment_method_add", _time, null()),
+       big_spend=if((sourcetype="fraud:payments" AND amount >= 100) OR event_type="plan_change", 1, 0)
+| stats min(reset_time) AS reset_time min(email_time) AS email_time min(card_time) AS card_time max(big_spend) AS monetized
+        max(a_new_device) AS new_device max(a_new_country) AS new_country max(a_impossible) AS impossible_travel
+        max(a_reach) AS accounts_on_device by user_id a_time
+| fillnull value=0 new_device new_country impossible_travel monetized
+| eval email_after_reset=if(isnotnull(email_time) AND isnotnull(reset_time) AND email_time > reset_time, 1, 0)
+| eval risk_score=10 * new_device + 15 * new_country + 20 * impossible_travel
+        + if(isnotnull(reset_time), 10, 0)
+        + case(email_after_reset=1, 15, isnotnull(email_time), 8, true(), 0)
+        + if(isnotnull(card_time), 10, 0) + 10 * monetized + if(accounts_on_device >= 3, 10, 0)
+| eval risk_score=min(risk_score, 100)
+``` one row per account: its most suspicious anchor ```
+| sort 0 user_id -risk_score
+| dedup user_id
+| eval recommended_action=case(risk_score >= 85, "review", risk_score >= 60, "step_up", true(), "allow")
+| where recommended_action != "allow"
+| eval anchor=strftime(a_time, "%Y-%m-%d %H:%M")
+| table user_id risk_score recommended_action anchor new_device new_country impossible_travel email_after_reset monetized accounts_on_device
+| sort 0 -risk_score

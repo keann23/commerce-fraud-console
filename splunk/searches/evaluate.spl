@@ -1,0 +1,11 @@
+``` SCORING ANY SEARCH AGAINST THE TRUTH (analyst training only; detection searches never use it)
+    Append to a detection search that outputs entity_type + entity_id (card testing shown here).
+    ground_truth.csv must be uploaded as a lookup table file (see splunk/README.md). ```
+| inputlookup ground_truth.csv where attack_type="card_testing" label="attack" (entity_type="ip" OR entity_type="device")
+| eval key=entity_type . ":" . entity_id
+| join type=left key
+    [ search index=fraud sourcetype="fraud:payments" ``` paste the card_testing.spl body here, then: ```
+      | eval key=entity_type . ":" . entity_id, flagged=1 | table key flagged ]
+| fillnull value=0 flagged
+| stats count AS attack_entities sum(flagged) AS caught
+| eval recall=round(caught / attack_entities, 3)

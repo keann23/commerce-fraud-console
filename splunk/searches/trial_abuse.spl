@@ -1,0 +1,43 @@
+``` TRIAL ABUSE: SPL version of sql/detect/trial_abuse.sql, ONE-HOP approximation.
+    The SQL links accounts into full connected components with a recursive query (A shares a laptop
+    with B, B shares a card with C, so A, B, C are one person). SPL has no recursion, so this search
+    groups accounts by each shared value separately (one device, one card, or one inbox) and scores
+    that group. It finds the same rings when they share one strong link, but can split a ring that is
+    only chained together. Real teams either iterate this search or push the graph step to a graph store.
+    Email normalization is done inline: lower-case, strip +tags, strip dots for Gmail. ```
+index=fraud (sourcetype="fraud:signups" OR sourcetype="fraud:payment_methods" OR sourcetype="fraud:logins")
+| eval email=lower(trim(email)), local=mvindex(split(email, "@"), 0), domain=mvindex(split(email, "@"), 1)
+| eval local=mvindex(split(local, "+"), 0),
+       domain=if(domain="googlemail.com", "gmail.com", domain),
+       local=if(domain="gmail.com", replace(local, "\.", ""), local)
+| eval inbox=if(isnotnull(email), local . "@" . domain, null())
+| lookup disposable_domains.csv domain OUTPUT domain AS disposable_hit
+| eval link=case(sourcetype="fraud:signups", mvappend("email:" . inbox, "device:" . signup_device_id),
+                 sourcetype="fraud:payment_methods", "card:" . card_fingerprint,
+                 sourcetype="fraud:logins", "device:" . device_id)
+| eval trial=if(is_trial="true", 1, 0), converted_flag=if(converted="true", 1, 0),
+       decided=if(is_trial="true" AND isnotnull(converted), 1, 0),
+       early_cancel=if(is_trial="true" AND isnotnull(canceled_ts) AND canceled_ts < trial_end_ts, 1, 0),
+       disposable=if(isnotnull(disposable_hit), 1, 0), virtual=if(is_virtual_or_prepaid="true", 1, 0)
+``` attach each account's trial facts to every link it used ```
+| eventstats max(trial) AS trial max(converted_flag) AS converted_flag max(decided) AS decided
+             max(early_cancel) AS early_cancel max(disposable) AS disposable max(virtual) AS virtual
+             values(inbox) AS account_inbox by user_id
+| mvexpand link
+| stats dc(user_id) AS n_accounts dc(eval(if(trial=1, user_id, null()))) AS n_trials
+        dc(eval(if(decided=1, user_id, null()))) AS n_decided dc(eval(if(converted_flag=1, user_id, null()))) AS n_converted
+        dc(eval(if(early_cancel=1, user_id, null()))) AS n_early_cancel dc(account_inbox) AS n_inboxes
+        avg(disposable) AS disposable_share avg(virtual) AS virtual_share values(user_id) AS accounts by link
+| where n_accounts >= 2 AND n_accounts <= 50 AND n_trials >= 1
+| eval email_alias_share=1 - n_inboxes / n_accounts,
+       non_conversion=if(n_decided > 0, 1 - n_converted / n_decided, 0)
+| eval risk_score=round(min(
+        25 * min(max(n_trials - 1, 0) / 8, 1)
+      + 30 * non_conversion * min(n_decided / 3, 1)
+      + 20 * min((email_alias_share + disposable_share) / 0.5, 1)
+      + if(virtual_share >= 0.5 OR n_accounts >= 5 AND like(link, "card:%"), 15, 0)
+      + 10 * n_early_cancel / n_trials, 100))
+| eval recommended_action=case(risk_score >= 80, "block", risk_score >= 60, "step_up", true(), "allow")
+| where recommended_action != "allow"
+| table link n_accounts n_trials n_converted n_inboxes risk_score recommended_action accounts
+| sort 0 -risk_score -n_accounts
