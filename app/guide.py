@@ -268,6 +268,29 @@ GUIDES = {
             "How does it compare with the ATO detector?",
         ],
     },
+    "intel_brief": {
+        "summary": "A weekly write-up of what happened: alerts by pattern, business signals and the top cases, "
+                   "compared with last week and the 4-week average, ready to send to a fraud manager.",
+        "why": "Fraud teams don't just catch cases; they report trends, so leaders can see what attackers are "
+               "doing and where to spend effort. A good brief separates real change from noise and says what to do next.",
+        "how": [
+            "Pick a week. The chart shows alerts per pattern for every week; the dotted line marks the one you picked.",
+            "Read the brief. It compares the week with the one before and with the 4-week average.",
+            "Open **The exact numbers** to see the facts it was written from. Every figure in the brief must trace back to them.",
+            "With an Anthropic API key configured, switch the writer to **Claude** for a narrative version of the same numbers.",
+        ],
+        "look_for": [
+            "**Change vs baseline, not raw counts**: '+196% vs 4-week avg' says more than '17 alerts'.",
+            "**Leading indicators**: a jump in micro auths (≤ $2) with high declines often comes before card testing alerts.",
+            "**Label delay** again: dispute counts for recent weeks are incomplete, and the brief says so.",
+            "**Grounding**: Claude only sees aggregate numbers (never customer rows) and is told not to add any figure "
+            "that isn't in the facts. Compare its text with the facts and check.",
+        ],
+        "try": [
+            "Launch a big card testing attack in Attack Mode, then come back to the week it landed in. Does the brief call it out?",
+            "Compare the template and Claude versions of the same week: what does each do better?",
+        ],
+    },
 }
 
 GLOSSARY = {

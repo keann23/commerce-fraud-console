@@ -7,3 +7,4 @@ plotly==7.1.0
 pyvis==0.3.2
 fpdf2==2.9.0
 pytest==9.2.0
+anthropic==2.10.0
