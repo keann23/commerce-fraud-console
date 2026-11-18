@@ -101,7 +101,7 @@ def labeled_scores(con) -> pd.DataFrame:
             SELECT attack_type AS pattern, entity_type, entity_id,
                    max(CASE WHEN label = 'attack' THEN 1 ELSE 0 END) AS is_attack,
                    max(CASE WHEN label = 'lookalike' THEN 1 ELSE 0 END) AS is_lookalike,
-                   any_value(campaign_id) AS campaign_id
+                   min(campaign_id) AS campaign_id
             FROM ground_truth GROUP BY ALL
         )
         SELECT s.*, coalesce(t.is_attack, 0) = 1 AS is_attack, coalesce(t.is_lookalike, 0) = 1 AS is_lookalike,

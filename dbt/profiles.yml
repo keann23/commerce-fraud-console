@@ -1,0 +1,10 @@
+# Local profile: builds into the same DuckDB file the app uses, in a separate `dbt` schema,
+# so dbt's output can be compared row for row with `make detect` (schema main).
+commerce_fraud:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '../data/commerce.duckdb') }}"
+      schema: dbt
+      threads: 4

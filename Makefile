@@ -1,6 +1,6 @@
 PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 
-.PHONY: setup data detect eval test app all clean
+.PHONY: setup data detect eval test app all clean dbt
 
 setup:
 	python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -24,3 +24,9 @@ clean:
 
 eval:
 	$(PY) -m src.evaluate
+
+# Phase 2: regenerate dbt models from sql/, build them with tests, prove parity with `make detect`.
+dbt: detect
+	$(PY) dbt/sync_from_sql.py
+	cd dbt && ../$(PY) -m dbt.cli.main build --profiles-dir .
+	$(PY) dbt/check_parity.py

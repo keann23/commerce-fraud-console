@@ -1,0 +1,35 @@
+version: 2
+
+# Contract every detection must meet (CLAUDE.md rule 4), checked by `dbt build`.
+models:
+  - name: detect_card_testing
+    description: Card testing score per IP and per device over the worst rolling 10-minute window.
+    columns: &detection_columns
+      - name: entity_id
+        tests: [not_null]
+      - name: risk_score
+        tests: [not_null]
+      - name: reason_codes
+        tests: [not_null]
+      - name: recommended_action
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["allow", "step_up", "review", "block"]
+  - name: detect_trial_abuse
+    description: Trial abuse score per account, from its identity cluster.
+    columns: *detection_columns
+  - name: detect_ato
+    description: Account takeover score per account, from its most suspicious anchor login.
+    columns: *detection_columns
+  - name: detect_friendly_fraud
+    description: Friendly fraud score per 'unauthorized' dispute.
+    columns: *detection_columns
+  - name: identity_clusters
+    description: Connected components of accounts linked by device, card or normalized inbox.
+    columns:
+      - name: user_id
+        tests: [unique, not_null]
+  - name: scored_entities
+    description: Every scored entity from every detection, with ladder step, friction and dollar exposure.

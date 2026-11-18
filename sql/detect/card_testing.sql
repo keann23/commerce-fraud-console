@@ -123,7 +123,7 @@ validated AS (
 )
 SELECT
     v.card_fingerprint,
-    any_value(v.entity_type || ':' || v.entity_id) AS tested_from,
+    min(v.entity_type || ':' || v.entity_id) AS tested_from,  -- deterministic: first entity alphabetically
     min(v.window_end) AS validated_at,
     count(DISTINCT c.txn_id) AS later_charges,
     coalesce(sum(c.amount), 0) AS later_charge_amount,

@@ -1,0 +1,4 @@
+# Phase 2 tooling, not needed by the app or Streamlit Cloud.
+-r requirements.txt
+dbt-core==1.12.7
+dbt-duckdb==1.11.1

@@ -1,0 +1,19 @@
+# dbt port of the detection pipeline. Models are GENERATED from sql/ by dbt/sync_from_sql.py.
+name: commerce_fraud
+version: "1.0.0"
+config-version: 2
+profile: commerce_fraud
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# DuckDB macros (normalize_email, haversine_km, ...) must exist before any model runs.
+on-run-start:
+  - "{{ create_duckdb_macros() }}"
+
+models:
+  commerce_fraud:
+    +schema: dbt

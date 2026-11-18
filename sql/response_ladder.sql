@@ -39,11 +39,11 @@ WITH card_testing AS (
     LEFT JOIN (SELECT tested_from, sum(later_charge_amount) AS later_usd
                FROM card_testing_validated_cards GROUP BY 1) v
            ON v.tested_from = d.entity_type || ':' || d.entity_id
-    LEFT JOIN (SELECT a.ip AS entity_id, 'ip' AS entity_type, sum(u.monthly_usd) AS monthly_usd
+    LEFT JOIN (SELECT a.ip AS entity_id, 'ip' AS entity_type, round(sum(u.monthly_usd), 2) AS monthly_usd
                FROM (SELECT DISTINCT ip, user_id FROM payment_attempts WHERE result = 'approved') a
                JOIN user_monthly_revenue u USING (user_id) GROUP BY a.ip
                UNION ALL
-               SELECT a.device_id, 'device', sum(u.monthly_usd)
+               SELECT a.device_id, 'device', round(sum(u.monthly_usd), 2)
                FROM (SELECT DISTINCT device_id, user_id FROM payment_attempts WHERE result = 'approved') a
                JOIN user_monthly_revenue u USING (user_id) GROUP BY a.device_id) r
            USING (entity_type, entity_id)
