@@ -114,3 +114,16 @@ INSERT INTO disposable_domains VALUES
     ('mailinator.com'), ('guerrillamail.com'), ('10minutemail.com'), ('tempmail.com'),
     ('yopmail.com'), ('trashmail.com'), ('sharklasers.com'), ('getnada.com'),
     ('dispostable.com'), ('maildrop.cc');
+
+-- List prices, loaded from src/config.py at build time so Python and SQL share one source.
+CREATE TABLE plan_prices (plan VARCHAR PRIMARY KEY, monthly_usd DECIMAL(10, 2));
+
+-- Analyst decisions from the Case File screen (Approve / Step-up / Review / Block).
+CREATE TABLE case_decisions (
+    decided_ts    TIMESTAMP DEFAULT current_timestamp,
+    pattern       VARCHAR,
+    entity_type   VARCHAR,
+    entity_id     VARCHAR,
+    decision      VARCHAR,
+    note          VARCHAR
+);

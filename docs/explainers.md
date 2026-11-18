@@ -51,9 +51,9 @@ Short answer: the FPR is only as honest as the noise, so I modeled the specific 
 
 Score = velocity 20 + card diversity 20 + declines 40 + micro amounts 10 + card pattern 10. Declines get the most weight because they are the one thing the campus lookalike can't fake: those students' cards are real. And the decline score only counts once there are 5+ attempts, because one declined card proves nothing.
 
-Results on seed 42 (12 campaigns, 42 attack IPs/devices, 430 lookalikes): recall 1.00, precision 1.00, false positive rate 0 on legit and on lookalikes. The margin matters more than the headline: the weakest attack entity scored 90, while the strongest legit entity (a customer retrying their own card 7 times) scored 51, against an alert line of 60. A test also injects the hardest campaign the PRD allows (100 attempts over 30 minutes split across 3 IPs and 3 devices, only 70% declined, for each card pattern) and requires every entity to be caught.
+Results on seed 42 (12 campaigns, 42 attack IPs/devices, 402 lookalikes): recall 1.00, precision 1.00, false positive rate 0 on legit and on lookalikes. The margin matters more than the headline: the weakest attack entity scored 90, while the strongest legit entity (a customer retrying their own card 7 times) scored 53, against an alert line of 60. A test also injects the hardest campaign the PRD allows (100 attempts over 30 minutes split across 3 IPs and 3 devices, only 70% declined, for each card pattern) and requires every entity to be caught.
 
-A second table, `card_testing_validated_cards`, lists the cards a flagged burst proved were live and whether they were later charged. On seed 42 that is 871 validated cards, 440 of them cashed out for $53.6k.
+A second table, `card_testing_validated_cards`, lists the cards a flagged burst proved were live and whether they were later charged. On seed 42 that is 871 validated cards, 434 of them cashed out for $52.7k.
 
 **Why this response.** 80+ → **block** the IP/device and rate-limit payment attempts. 60 to 79 → **step up** with CAPTCHA at checkout. Not manual review: a burst is over in minutes, so a human queue arrives too late. Friction is low because the block hits an IP/device that has no honest customers on it. The risk is a shared IP (campus, office NAT), which is why the campus workshop is a lookalike and why a mid score gets a CAPTCHA, not a block. The real follow-up is the validated-cards list: block those card fingerprints before the cash-out.
 
@@ -84,7 +84,7 @@ Each cluster with a trial is then scored (`sql/detect/trial_abuse.sql`):
 | Virtual card, or one card on 5+ accounts | 15 | Shared virtual cards | Family card on 2 to 4 accounts |
 | Cancel before billing | 10 | Always | Sometimes |
 
-Results on seed 42 (10 rings, 268 abuse accounts, 155 lookalikes): recall 0.993, precision 1.00, false positive rate 0 on all legit and on lookalikes. The lowest-scoring lookalike scored 43, against an alert line of 60. Collapsing identities turns **4,011 trial accounts into 3,616 real people: 9.9% trial inflation.** The 2 misses were accounts that used a fresh device, a fresh card and a throwaway inbox all at once: nothing links them, so a graph can't see them.
+Results on seed 42 (10 rings, 268 abuse accounts, 155 lookalikes): recall 0.993, precision 1.00, false positive rate 0 on all legit and on lookalikes. The highest-scoring lookalike scored 43, against an alert line of 60. Collapsing identities turns **3,983 trial accounts into 3,588 real people: 9.9% trial inflation**, and the 266 flagged abuse accounts collapse into just 10 people. The 2 misses were accounts that used a fresh device, a fresh card and a throwaway inbox all at once: nothing links them, so a graph can't see them.
 
 **Why this response.** 80+ → **block** new trials on the cluster's devices, cards and inboxes. 60 to 79 → **step up**: require a non-virtual card and phone verification to start a trial. Never ban the person from paying: a trial abuser is still a potential customer, and the cheapest fix is simply to make the next trial cost something. Friction is low for honest users because a real card and a phone number are things they already have.
 
@@ -116,11 +116,11 @@ Two design choices worth defending:
 - **"New" means no earlier *successful* login.** Crews guess a few passwords from the same device first. If failed attempts counted as history, the successful login would look familiar.
 - **14-day warm-up.** The dataset's login history starts at day 0, so for the first two weeks every device looks new. Detection ignores anchors in that period; a real system has years of history.
 
-Results on seed 42 (8 campaigns, 94 victims, 72 lookalikes): recall 0.99, precision 1.00, false positive rate 0. Legit accounts never scored above 25 (new device + new country: a traveler with a new phone). Attacks averaged 88. The one miss scored 55: the crew logged in from a country that victim had already visited, so the new-country and impossible-travel points never fired.
+Results on seed 42 (8 campaigns, 94 victims, 72 lookalikes): recall 1.00, precision 1.00, false positive rate 0. Legit accounts never scored above 25 (new device + new country: a traveler with a new phone); the weakest victim scored 70. The dangerous case is a crew logging in from a country the victim has already visited: then the new-country and impossible-travel points never fire, and the account-change chain alone scores about 55, just under the line.
 
 **Why this response.** 60 to 84 → **step up**: force MFA re-authentication and freeze email and payment changes for 72 hours. 85+ → **review**: kill sessions, verify the owner through the *original* email, roll back the email and card changes, refund the charge. Never **block**: banning the account punishes the victim (a test enforces this). Friction cost: a legit traveler with a new phone at most gets an MFA prompt, which they can pass.
 
-**One limitation.** The anchor relies on device and country being new. A crew using residential proxies in the victim's own city, with a spoofed copy of the victim's device fingerprint, only shows up through the account changes, which caps the score around 55 (exactly the miss above). Real teams add behavioural biometrics (typing, navigation speed), check leaked-credential databases at login, and give a "reset then email change" chain weight on its own regardless of device.
+**One limitation.** The anchor relies on device and country being new. A crew using residential proxies in the victim's own city, with a spoofed copy of the victim's device fingerprint, only shows up through the account changes, which caps the score around 55 (the dangerous case above). Real teams add behavioural biometrics (typing, navigation speed), check leaked-credential databases at login, and give a "reset then email change" chain weight on its own regardless of device.
 
 **Likely interview question.** *"How is impossible travel computed, and how does it produce false positives?"*
 Short answer: haversine distance between consecutive logins divided by the time between them; over 900 km/h (faster than a plane) is impossible. False positives come from IP geolocation error (mobile carriers, VPNs, corporate egress in another city), so I also require 500+ km, and in production I'd discount hops involving VPN or hosting IPs.
@@ -152,3 +152,29 @@ Results on seed 42 (61 friendly fraud disputes, 219 honest unauthorized disputes
 
 **Likely interview question.** *"Why not just block customers who file friendly fraud disputes?"*
 Short answer: because winning the dispute and keeping the customer are both worth more than banning them. The right move is to represent with evidence, and only escalate (require a non-disputable payment method, or end the relationship) for repeat offenders.
+
+---
+
+## 6. Response ladder and friction tradeoff
+
+**What it is.** One policy layer (`sql/response_ladder.sql`) that every detection feeds. Each score maps to allow → step-up → review → block, and each step carries an assumed **friction rate** (the share of honest customers lost at that step) and a **fraud stop rate** (how often it actually stops an attack):
+
+| Step | Legit customers lost | Attacks stopped | Example |
+|---|---|---|---|
+| Allow | 0% | 0% | — |
+| Step-up | 5% | 90% | 3DS, MFA, CAPTCHA |
+| Review | 10% | 100% | Analyst queue, owner verification, representment |
+| Block | 100% | 100% | Deny the IP, device, cluster |
+
+**How it shows up in the data.** `scored_entities` puts two dollar figures on every scored entity *without* looking at labels: `fraud_usd_if_true` (cash-out, fraudulent spend plus fees, a free trial month, the disputed amount) and `monthly_revenue_usd` (what that customer pays us). The Friction Tradeoff screen joins these to ground truth (through `src/evaluate.py` only) and sweeps the alert threshold for two policies:
+- **Block-only:** anything at or above the threshold is blocked.
+- **Ladder:** the 20 points above the threshold get step-up; higher scores get the pattern's strongest step.
+
+On seed 42, at a threshold of 40, both policies stop about $103.3k of fraud. **Block-only causes 288 false declines (~$59.8k of monthly revenue); the ladder causes about 14 (~$3.0k): 95% fewer, at the same fraud capture.** At the default threshold of 60 there are no legit hits at all, so the ladder only matters once you push for more recall, which is exactly when you need it.
+
+**Why this response.** Card testing and trial abuse top out at **block**: the entity has no honest owner to protect. ATO and friendly fraud top out at **review**: the account owner is either a victim or still a customer.
+
+**One limitation.** The friction and stop rates are assumptions, not measurements. A real team would A/B test each challenge (3DS abandonment varies a lot by issuer and region), and price analyst time into the review step.
+
+**Likely interview question.** *"How would you pick the threshold?"*
+Short answer: minimize expected cost, which is missed fraud dollars plus friction cost on legit customers, using matured labels. The tradeoff curve shows it directly. Then re-check monthly, because attackers adapt and the label delay means the last few weeks always look better than they are.

@@ -5,7 +5,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from src.config import DB_PATH, SQL_DIR
+from src.config import DB_PATH, PLAN_PRICES, SQL_DIR
 
 TABLE_ORDER = [
     "users", "devices", "logins", "account_events", "payment_methods",
@@ -43,6 +43,7 @@ def create_fresh_database(path: Path | str = DB_PATH) -> duckdb.DuckDBPyConnecti
     con = connect(path)
     run_sql_file(con, SQL_DIR / "schema.sql")
     run_sql_file(con, SQL_DIR / "macros.sql")
+    con.executemany("INSERT INTO plan_prices VALUES (?, ?)", list(PLAN_PRICES.items()))
     return con
 
 

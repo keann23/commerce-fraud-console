@@ -1,25 +1,141 @@
 # Commerce Fraud Investigator Console
 
-A fraud analyst console for a simulated Adobe-style subscription business: it generates customer, payment, login, trial, usage and dispute data, injects real-world fraud patterns, detects them in SQL, and recommends responses that balance fraud loss against customer friction.
+A working fraud analyst console for a simulated Adobe-style subscription business. It generates realistic customers, payments, logins, trials, product usage and disputes; injects four real-world abuse patterns on demand; detects them in plain SQL; and recommends a response that balances fraud loss against customer friction.
 
-> **All data in this project is synthetic.** It is generated with Faker and a fixed random seed. No real people, cards or accounts are involved.
+> **All data in this project is synthetic.** It is generated with Faker and a fixed random seed. No real people, cards, accounts or companies' data are involved. "Adobe-style" describes the business model being simulated (Creative Cloud-like plans, trials, student pricing), not Adobe data.
 
-## Quick start
+![Overview](docs/img/overview.jpg)
+
+## The problem
+
+Subscription businesses lose money in four very different ways, and each needs a different response:
+
+| Pattern | What happens | Wrong response | Right response |
+|---|---|---|---|
+| **Card testing** | Stolen cards validated with hundreds of $1 auths, then cashed out days later | Ignore it (fees, issuer penalties) | Block the IP/device, rate limit, block the validated cards |
+| **Trial abuse** | One person, 10 to 50 "new" accounts, endless free trials | Ban the person | Collapse identities; require a real card for the next trial |
+| **Account takeover** | Leaked password → reset → email change → new card → big purchase | Ban the account (the owner is the victim) | Force MFA, freeze changes, roll back, refund |
+| **Friendly fraud** | Real customer uses the product, then disputes the charge as "unauthorized" | Block the customer | Fight the chargeback with evidence |
+
+The hard part isn't catching attacks, it's **not** catching the honest customers who look like them: families on one laptop, travelers, students with plus-addressed emails, a campus network starting trials together, someone retrying a failing card. Every attack injector here also injects those lookalikes, so false positive rates are measured, not assumed.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Generate["Python generators (fixed seed)"]
+        B[baseline.py<br/>20k customers + legit noise]
+        A[attacks/*.py<br/>card testing · trial abuse<br/>ATO · friendly fraud<br/>+ legit lookalikes]
+        D[disputes.py<br/>chargeback lag model]
+    end
+    subgraph Warehouse["DuckDB · data/commerce.duckdb"]
+        T[(users · logins · devices<br/>payments · subscriptions<br/>usage · disputes)]
+        GT[(ground_truth<br/>attack / lookalike labels)]
+        F[sql/features<br/>payment attempts · identity graph<br/>txn features]
+        X[sql/detect<br/>one SQL file per pattern]
+        L[sql/response_ladder.sql<br/>allow → step-up → review → block<br/>friction cost · $ exposure]
+    end
+    E[src/evaluate.py<br/>precision · recall · FPR<br/>tradeoff · backtests]
+    APP[Streamlit console<br/>9 screens]
+    B --> T
+    A --> T
+    A --> GT
+    D --> T
+    T --> F --> X --> L
+    L --> APP
+    GT -. only here .-> E
+    L --> E --> APP
+```
+
+Rules the code follows:
+- **Detection logic lives in SQL**; Python only generates, orchestrates and displays.
+- **Detection SQL never reads `ground_truth`.** Only `src/evaluate.py` and tests may (a test greps the SQL to enforce it).
+- **Same seed, same world.** Every run, test and demo sees identical data.
+- Every detection returns `entity_id, risk_score (0–100), reason_codes, recommended_action`.
+
+## Results (seed 42)
+
+| Pattern | Entity | Attack entities | Recall | Precision | FPR, all legit | Legit lookalikes | FPR, lookalikes |
+|---|---|---|---|---|---|---|---|
+| Card testing | IP / device | 42 | 1.00 | 1.00 | 0.000 | 402 | 0.000 |
+| Trial abuse | account | 268 | 0.99 | 1.00 | 0.000 | 155 | 0.000 |
+| Account takeover | account | 94 | 1.00 | 1.00 | 0.000 | 72 | 0.000 |
+| Friendly fraud | dispute | 61 | 1.00 | 1.00 | 0.000 | 219 | 0.000 |
+
+The margin matters more than the headline numbers. For each pattern, the weakest attack and the strongest legit entity score:
+
+| Pattern | Lowest attack score | Highest legit score | Alert line |
+|---|---|---|---|
+| Card testing | 90 | 53 (customer retrying their card 7 times) | 60 |
+| Account takeover | 70 | 25 (traveler with a new phone) | 60 |
+| Friendly fraud | 90 | 50 (fraud account with its own purchase history) | 60 |
+| Trial abuse | 35* | 43 (family sharing a laptop and card) | 60 |
+
+\* The two trial abuse misses each used a fresh device, a fresh card and a throwaway inbox all at once, so nothing links them to the ring. Each explainer in [`docs/explainers.md`](docs/explainers.md) covers what a real team would add to close the gap.
+
+Other headline numbers:
+- **Trial inflation:** identity linking collapses 3,983 trial accounts into 3,588 real people (**9.9% inflation**); the 266 flagged abuse accounts are just **10 people**.
+- **Card testing cash-out trail:** 871 cards proven live by flagged bursts, 434 later charged from a different IP for **$52.7k**.
+- **Response ladder vs block-only:** at an alert threshold of 40, both stop about $103.3k of fraud, but block-only creates **288 false declines** versus **~14** for the ladder (**95% fewer**), and $59.8k versus $3.0k of monthly revenue put at risk.
+- **Label delay:** disputes arrive a median 30 days after purchase, so the most recent month shows a dispute ratio near zero. A test checks this.
+
+## Screens
+
+| | |
+|---|---|
+| **Overview:** fraud $ prevented, false declines, dispute ratio, alerts by pattern, detection quality | **Attack Mode:** sliders per attack, launch, detection reruns, shows what fired, how fast, what was missed, which lookalikes were hit |
+| **Case Queue:** alerts by risk, reason codes, exposure, analyst decisions | **Ring Explorer:** identity graph of accounts linked by device, card and normalized email; card testing bursts with their cash-outs |
+| **Case File:** one account's timeline (logins, events, payments, disputes, usage), linked entities, Approve / Step-up / Review / Block buttons that are logged | **Friction Tradeoff:** threshold slider, block-only vs ladder: fraud stopped vs false declines and revenue lost |
+| **Dispute Lifecycle:** lag histogram, label maturity curve, weekly dispute ratio, win rate by reason | **Evidence Pack:** one-click PDF to represent a friendly fraud dispute |
+| **Rule Simulator:** write a SQL `WHERE` clause over payment attempts and backtest it | |
+
+![Ring Explorer](docs/img/ring_explorer.jpg)
+![Friction Tradeoff](docs/img/friction_tradeoff.jpg)
+
+## Run it
+
+Requires Python 3.11+.
 
 ```bash
 make setup   # create .venv and install requirements
-make all     # generate data, run detection SQL, run tests
-make app     # launch the Streamlit console (coming soon)
+make all     # generate data, run detection SQL, print evaluation, run tests (~1 minute)
+make app     # open the console at http://localhost:8501
 ```
 
-## Status
+`make data` builds `data/commerce.duckdb` (20,000 baseline customers plus 34 default attack campaigns). `make detect` runs `sql/features`, then `sql/detect`, then `sql/response_ladder.sql`. `make eval` prints the results table. The app builds the database itself on first start if it doesn't exist.
 
-- [x] Schema, SQL macros, deterministic baseline generator with legit noise
-- [x] Card testing: injector with lookalikes, detection SQL, evaluation (recall 1.00, FPR 0 on seed 42)
-- [x] Trial abuse: email normalization, identity graph, detection, evaluation (recall 0.99, FPR 0 on seed 42)
-- [x] Account takeover: anchor logins, impossible travel, ordered event chain (recall 0.99, FPR 0 on seed 42)
-- [x] Friendly fraud and chargeback lifecycle (recall 1.00, FPR 0 on seed 42)
-- [ ] Response ladder
-- [ ] Streamlit screens and deployment
+## Deploy (Streamlit Community Cloud)
 
-See `docs/explainers.md` for the reasoning behind each design choice.
+1. Push this repo to GitHub.
+2. At share.streamlit.io: **New app** → pick the repo → main file `app/Home.py` → Python 3.12 → Deploy.
+3. On first boot the app generates the world (about a minute), then it's cached. **Reset world** in Attack Mode regenerates it.
+
+## Repo layout
+
+```
+src/generate/baseline.py        legit customers + legit noise
+src/generate/attacks/*.py       one injector per pattern, each with legit lookalikes
+src/generate/disputes.py        chargeback lag and lifecycle
+src/db.py                       DuckDB connection and SQL runner
+src/evaluate.py                 precision / recall / FPR, tradeoff, backtests (only reader of ground_truth)
+src/evidence_pack.py            friendly fraud representment PDF
+sql/schema.sql, sql/macros.sql  tables; email normalization, haversine, travel speed
+sql/features/                   payment attempts, identity graph, txn features
+sql/detect/                     card_testing, trial_abuse, ato, friendly_fraud
+sql/response_ladder.sql         ladder steps, friction, $ exposure, alerts
+app/                            Streamlit console (Home + 8 pages)
+tests/                          50 tests: determinism, macros, recall/FPR minimums, ladder, guards
+docs/explainers.md              plain-English explainer and interview Q&A for every pattern
+```
+
+## Resume bullets
+
+- Built a commerce fraud investigation console (Python, SQL, DuckDB, Streamlit) simulating an Adobe-style subscription business, detecting card testing, account takeover, trial abuse and friendly fraud at 99 to 100% recall with 0% false positives on 850 deliberately built legit lookalikes
+- Collapsed 3,983 "unique" trial accounts into 3,588 real identities via email normalization and device/card graph linking in SQL, exposing 9.9% trial inflation; 266 abusive accounts traced to 10 people
+- Designed a response ladder (allow, step-up, review, block) that cut false declines 95% (288 → 14) versus block-only at equal fraud capture
+
+## Next (Phase 2)
+
+- Validate detection ideas on the real IEEE-CIS fraud dataset
+- Port SQL to dbt-duckdb; replicate key investigations in Splunk SPL
+- Weekly intel brief: an LLM-written summary of trends from the metrics tables
