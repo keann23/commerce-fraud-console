@@ -79,6 +79,15 @@ Other headline numbers:
 - **Response ladder vs block-only:** at an alert threshold of 40, both stop about $103.3k of fraud, but block-only creates **288 false declines** versus **~14** for the ladder (**95% fewer**), and $59.8k versus $3.0k of monthly revenue put at risk.
 - **Label delay:** disputes arrive a median 30 days after purchase, so the most recent month shows a dispute ratio near zero. A test checks this.
 
+## Built for learning
+
+The console doubles as a teaching simulator: the whole fraud loop (attack → detect → decide → measure) on safe synthetic data where the answers are known.
+
+- **Learning Guide** page: why the simulator exists, the four attacks at a glance, how the pipeline works, an 11-step guided path with exercises, and a searchable glossary of ~30 fraud and payments terms.
+- **Every screen** opens with what it is, why it matters in a real fraud team, how to use it, what to look for, and things to try.
+- **💡 lessons** sit next to the key charts and tables, and every Attack Mode slider explains what it changes.
+- A **Learning mode** switch in the sidebar hides all of it for a clean demo.
+
 ## Screens
 
 | | |

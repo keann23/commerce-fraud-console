@@ -9,13 +9,12 @@ import streamlit as st  # noqa: E402
 from plotly.subplots import make_subplots  # noqa: E402
 
 from common import PATTERN_LABELS, cursor, money, q, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 from src.evaluate import tradeoff  # noqa: E402
 
 setup_page("Friction Tradeoff", "⚖️")
 st.title("Friction Tradeoff")
-st.markdown("Lowering the alert threshold catches more fraud but touches more honest customers. Compare a "
-            "**block-only** policy with the **response ladder**, which challenges mid-risk scores (3DS / MFA / "
-            "CAPTCHA) and saves blocks for the clearest cases.")
+page_intro("friction_tradeoff")
 
 c1, c2 = st.columns([1, 2])
 choice = c1.selectbox("Pattern", ["all", *PATTERN_LABELS], format_func=lambda p: "All patterns" if p == "all"
@@ -46,6 +45,8 @@ m3.metric("Expected false declines", f"{lad.expected_false_declines:,.1f}",
 saved = 1 - lad.expected_false_declines / blk.expected_false_declines if blk.expected_false_declines else 0
 m4.metric("False declines avoided by the ladder", f"{saved:.0%}")
 
+tip("Same alerts, different responses: both policies fire on exactly the same entities (same recall). The "
+    "ladder just challenges the borderline ones instead of blocking them, so far fewer honest customers are lost.")
 fig = make_subplots(rows=1, cols=2, subplot_titles=("Fraud stopped ($)", "Legit monthly revenue lost ($)"))
 colors = {"block_only": "#d93025", "ladder": "#1a73e8"}
 for policy, frame in df.groupby("policy"):

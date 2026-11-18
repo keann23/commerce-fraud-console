@@ -7,9 +7,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import streamlit as st  # noqa: E402
 
 from common import ACTION_LABELS, PATTERN_LABELS, open_case, q, reasons, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 
 setup_page("Case Queue", "📥")
 st.title("Case Queue")
+page_intro("case_queue")
 
 alerts = q("""
     WITH latest AS (
@@ -35,6 +37,8 @@ view = view.assign(pattern_label=view.pattern.map(PATTERN_LABELS), reasons=view.
 
 st.caption(f"{len(view):,} alerts · total exposure ${view.exposure_usd.sum():,.0f}. "
            "Select a row to open its case file.")
+tip("Triage rule of thumb: work the highest risk × exposure first, and make sure you can explain the "
+    "reason codes before you act. Click a row, then Open case file.")
 selection = st.dataframe(
     view[["risk_score", "pattern_label", "entity_type", "entity_id", "action", "reasons", "exposure_usd",
           "event_ts", "decision"]],

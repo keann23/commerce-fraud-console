@@ -3,14 +3,18 @@ import plotly.express as px
 import streamlit as st
 
 from common import ACTION_COLORS, ACTION_LABELS, PATTERN_LABELS, cursor, money, q, setup_page
+from guide import PURPOSE, learning_mode, page_intro, tip
 from src.evaluate import evaluate_all, overview
 
 setup_page("Overview")
 st.title("Commerce Fraud Investigator Console")
-st.markdown(
-    "A simulated Adobe-style subscription business: 20,000 customers over 120 days, with card testing, "
-    "trial abuse, account takeover and friendly fraud injected on top. Detection is plain SQL; every alert "
-    "maps to a response ladder that trades fraud loss against customer friction. **All data is synthetic.**")
+st.caption("A fraud analyst console and learning simulator for an Adobe-style subscription business. "
+           "All data is synthetic.")
+with st.expander("🎯 What this simulator is for", expanded=learning_mode()):
+    st.markdown(PURPOSE)
+    st.markdown("**Suggested path:** Learning Guide → Overview → Attack Mode → Case Queue → Case File → "
+                "Ring Explorer → Friction Tradeoff → Dispute Lifecycle → Evidence Pack → Rule Simulator.")
+page_intro("overview")
 
 cur = cursor()
 stats = overview(cur)
@@ -44,6 +48,8 @@ with left:
                  labels={"n": "Alerts", "pattern": "", "recommended_action": "Action"}, height=330)
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", y=-0.15))
     st.plotly_chart(fig, use_container_width=True)
+    tip("Trial abuse has the most alerts because one ring is many accounts, but each card testing alert "
+        "carries far more money: the cards it validated get cashed out later.")
 with right:
     st.subheader("Dispute ratio by charge month")
     fig = px.line(dispute_month, x="month", y="dispute_ratio", markers=True, height=330,

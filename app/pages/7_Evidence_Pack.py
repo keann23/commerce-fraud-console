@@ -7,12 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import streamlit as st  # noqa: E402
 
 from common import q, reasons, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 from src.evidence_pack import build_evidence_pdf  # noqa: E402
 
 setup_page("Evidence Pack", "📄")
 st.title("Evidence Pack")
-st.markdown("For disputes scored as likely **friendly fraud**, assemble what the issuer needs to reverse the "
-            "chargeback: the purchase came from the customer's own device and IP, and they kept using the product.")
+page_intro("evidence_pack")
 
 cases = q("""SELECT d.*, t.device_id, t.ip FROM detect_friendly_fraud d JOIN transactions t USING (txn_id)
              WHERE d.recommended_action = 'review' ORDER BY d.risk_score DESC, d.amount DESC""")
@@ -31,6 +31,8 @@ c3.metric("Minutes used after purchase", f"{int(case['minutes_after']):,}")
 c4.metric("Tenure at purchase", f"{int(case['tenure_days_at_purchase'])} days")
 st.caption(f"Reason codes: {reasons(case['reason_codes'])}")
 
+tip("Same device and same IP as earlier purchases that were never disputed is the core of Visa's "
+    "Compelling Evidence 3.0. Usage after the purchase shows the customer got what they paid for.")
 prior = q("""SELECT p.ts, p.amount, p.device_id, p.ip, d.dispute_id IS NOT NULL AS disputed
              FROM transactions p LEFT JOIN disputes d USING (txn_id)
              WHERE p.user_id = ? AND p.ts < ? AND p.txn_type = 'charge' AND p.result = 'approved'

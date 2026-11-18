@@ -8,9 +8,11 @@ import plotly.express as px  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from common import ACTION_LABELS, PATTERN_LABELS, cursor, q, reasons, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 
 setup_page("Case File", "🗂️")
 st.title("Case File")
+page_intro("case_file")
 
 case = st.session_state.get("case")
 alerts = q("SELECT pattern, entity_type, entity_id, risk_score FROM alerts ORDER BY risk_score DESC")
@@ -90,6 +92,9 @@ if users:
     cur.close()
 
     st.subheader("Timeline")
+    tip("Read left to right. For ATO look for: new-device login → password_reset → email_change → "
+        "payment_method_add → charge, all from the same device. For friendly fraud: a charge, steady usage "
+        "(bars below), then a dispute weeks later.")
     if not timeline.empty:
         fig = px.scatter(timeline, x="ts", y="kind", color="kind", hover_data=["detail", "amount"], height=360)
         fig.update_traces(marker=dict(size=10))

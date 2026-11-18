@@ -7,12 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import streamlit as st  # noqa: E402
 
 from common import cursor, q, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 from src.evaluate import rule_backtest  # noqa: E402
 
 setup_page("Rule Simulator", "🧪")
 st.title("Rule Simulator")
-st.markdown("Write a WHERE clause over every payment attempt (`txn_features`) and see how many attack "
-            "transactions it catches versus how many honest ones it would hit.")
+page_intro("rule_simulator")
 
 EXAMPLES = {
     "Card testing velocity": "ip_declines_10m >= 5 AND amount < 3",
@@ -41,6 +41,8 @@ if st.button("Backtest", type="primary"):
     c2.metric("Attack attempts caught", f"{result['attack_hits']:,}")
     c3.metric("Legit attempts hit", f"{result['legit_hits']:,}")
     c4.metric("Precision", f"{result['attack_hits'] / hits:.1%}" if hits else "n/a")
+    tip("Precision = attack hits ÷ all matches. Recall here would be attack hits ÷ all attack attempts, so a "
+        "rule can be precise but catch little. Tighten broad rules by adding a velocity or amount condition.")
     if result["by_attack_type"]:
         st.write("Attack hits by type:", result["by_attack_type"])
     st.dataframe(result["matches"].head(500), hide_index=True, use_container_width=True)

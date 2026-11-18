@@ -63,7 +63,13 @@ def rebuild_world():
 def setup_page(title: str, icon: str = "🛡️"):
     st.set_page_config(page_title=f"{title} · Fraud Console", page_icon=icon, layout="wide")
     _connection()
-    st.sidebar.caption("All data is **synthetic** (Faker + fixed seed). No real people, cards or accounts.")
+    # Widget values reset when you change page, so the setting lives in its own session key.
+    st.session_state.setdefault("learning_mode", True)
+    st.session_state["learning_mode"] = st.sidebar.toggle(
+        "📘 Learning mode", value=st.session_state["learning_mode"],
+        help="Opens each screen's guide and shows 💡 lessons next to charts. Turn off for a clean demo view.")
+    st.sidebar.caption("All data is **synthetic** (Faker + fixed seed). No real people, cards or accounts. "
+                       "New here? Start with the **Learning Guide** page.")
 
 
 def money(x: float) -> str:

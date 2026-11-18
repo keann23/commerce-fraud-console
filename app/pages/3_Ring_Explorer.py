@@ -9,9 +9,11 @@ import streamlit.components.v1 as components  # noqa: E402
 from pyvis.network import Network  # noqa: E402
 
 from common import ACTION_COLORS, ACTION_LABELS, open_case, q, reasons, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 
 setup_page("Ring Explorer", "🕸️")
 st.title("Ring Explorer")
+page_intro("ring_explorer")
 
 LINK_STYLE = {"device": ("square", "#4285f4"), "card": ("diamond", "#9334e6"), "email": ("triangle", "#12a4af")}
 
@@ -34,6 +36,8 @@ with tab_rings:
               delta=f"-{1 - summary.identities / summary.trial_accounts:.1%} trial inflation", delta_color="off")
     c3.metric("Rings flagged", int(summary.rings))
 
+    tip("Trial inflation = 1 − real identities ÷ trial accounts. It is how much your 'new trial' metric "
+        "overstates real people, before even deciding who is abusive.")
     clusters = q("""SELECT cluster_id, n_accounts, n_trials, n_converted, risk_score, recommended_action, reason_codes
                     FROM trial_identity_clusters WHERE n_accounts >= 2
                     ORDER BY risk_score DESC, n_accounts DESC LIMIT 200""")

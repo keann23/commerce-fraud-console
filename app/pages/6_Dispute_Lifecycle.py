@@ -9,11 +9,11 @@ import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from common import q, setup_page  # noqa: E402
+from guide import page_intro, tip  # noqa: E402
 
 setup_page("Dispute Lifecycle", "⏳")
 st.title("Dispute Lifecycle")
-st.markdown("Chargebacks arrive weeks after the purchase, so **recent weeks always look cleaner than they are**. "
-            "Judge a rule change on mature cohorts, or project with the maturity curve below.")
+page_intro("dispute_lifecycle")
 
 lags = q("""SELECT d.dispute_id, d.reason_category, d.status, d.outcome, date_diff('day', t.ts, d.filed_ts) AS lag_days
             FROM disputes d JOIN transactions t USING (txn_id)""")
@@ -49,6 +49,8 @@ with right:
     st.caption(f"Oldest monthly cohort, observable for ~{horizon} days. Disputes beyond that are still unseen, "
                "so even this curve is slightly optimistic.")
 
+tip("How to use the maturity curve: if only 60% of disputes are known 30 days after purchase, a 0.6% "
+    "dispute ratio for last month really means about 1.0% once all labels arrive.")
 st.subheader("Dispute ratio by purchase week")
 weekly = q("""
     WITH c AS (SELECT txn_id, date_trunc('week', ts) AS week FROM transactions
