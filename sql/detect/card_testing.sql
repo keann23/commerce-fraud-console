@@ -1,0 +1,135 @@
+-- CARD TESTING
+-- Attack: a fraudster holding a list of stolen card numbers runs tiny auths ($0.50 to $2) from
+-- one IP or device in a fast burst to learn which cards still work, then uses the good ones later.
+--
+-- Signals, measured per IP and per device over the worst rolling 10-minute window:
+--   attempts           velocity: no real customer makes dozens of payment attempts in 10 minutes
+--   distinct cards     a real customer owns 1 to 3 cards; a tester cycles through many
+--   decline rate       most stolen cards are dead, so 70 to 90 percent decline (only counted once
+--                      there are 5+ attempts, since one declined card alone proves nothing)
+--   median amount      testers use micro amounts to stay under the radar and keep costs low
+--   shared BIN / sequential last4
+--                      stolen lists are often one issuer's range or generated in sequence
+--
+-- Score (0 to 100): velocity 20 + card diversity 20 + declines 40 + micro amounts 10 + card pattern 10.
+-- Declines carry the most weight because they are what separates a tester from a busy campus IP.
+-- Action: 80+ block the IP/device and rate limit; 60 to 79 step up with CAPTCHA at checkout.
+
+CREATE OR REPLACE TABLE detect_card_testing AS
+WITH attempts AS (
+    SELECT 'ip' AS entity_type, ip AS entity_id, ts, card_fingerprint, bin, last4, amount, result
+    FROM payment_attempts WHERE ip IS NOT NULL
+    UNION ALL
+    SELECT 'device', device_id, ts, card_fingerprint, bin, last4, amount, result
+    FROM payment_attempts WHERE device_id IS NOT NULL
+),
+rolling AS (
+    SELECT
+        entity_type, entity_id, ts,
+        count(*)                          OVER w AS attempts_10m,
+        count(DISTINCT card_fingerprint)  OVER w AS cards_10m,
+        avg((result = 'declined')::INT)   OVER w AS decline_rate_10m,
+        median(amount)                    OVER w AS median_amount_10m
+    FROM attempts
+    WINDOW w AS (PARTITION BY entity_type, entity_id ORDER BY ts
+                 RANGE BETWEEN INTERVAL 10 MINUTES PRECEDING AND CURRENT ROW)
+),
+peak AS (  -- the single worst 10-minute window for each IP / device
+    SELECT *, ts - INTERVAL 10 MINUTES AS window_start, ts AS window_end
+    FROM rolling
+    QUALIFY row_number() OVER (PARTITION BY entity_type, entity_id
+                               ORDER BY attempts_10m DESC, cards_10m DESC, ts) = 1
+),
+burst_cards AS (  -- distinct cards seen inside that peak window
+    SELECT DISTINCT a.entity_type, a.entity_id, a.card_fingerprint, a.bin,
+           TRY_CAST(a.last4 AS INTEGER) AS last4_num
+    FROM attempts a
+    JOIN peak p USING (entity_type, entity_id)
+    WHERE a.ts BETWEEN p.window_start AND p.window_end
+      AND p.cards_10m >= 5          -- card patterns only mean something with several cards
+),
+bin_share AS (
+    SELECT entity_type, entity_id, max(n) / sum(n) AS top_bin_share
+    FROM (SELECT entity_type, entity_id, bin, count(*) AS n FROM burst_cards GROUP BY ALL)
+    GROUP BY ALL
+),
+sequence_share AS (
+    SELECT entity_type, entity_id,
+           avg(CASE WHEN last4_num - prev_last4 = 1 THEN 1 ELSE 0 END) AS sequential_last4_share
+    FROM (SELECT entity_type, entity_id, last4_num,
+                 lag(last4_num) OVER (PARTITION BY entity_type, entity_id ORDER BY last4_num) AS prev_last4
+          FROM (SELECT DISTINCT entity_type, entity_id, last4_num FROM burst_cards))
+    WHERE prev_last4 IS NOT NULL
+    GROUP BY ALL
+),
+scored AS (
+    SELECT
+        p.entity_type, p.entity_id, p.window_start, p.window_end,
+        p.attempts_10m, p.cards_10m, round(p.decline_rate_10m, 3) AS decline_rate_10m,
+        p.median_amount_10m,
+        coalesce(b.top_bin_share, 0) AS top_bin_share,
+        coalesce(s.sequential_last4_share, 0) AS sequential_last4_share,
+        20 * least(p.attempts_10m / 15.0, 1)                                         AS velocity_pts,
+        20 * least(p.cards_10m / 12.0, 1)                                            AS card_pts,
+        40 * least(p.decline_rate_10m / 0.7, 1) * least(p.attempts_10m / 5.0, 1)     AS decline_pts,
+        CASE WHEN p.median_amount_10m <= 2 THEN 10 WHEN p.median_amount_10m <= 5 THEN 5 ELSE 0 END
+                                                                                     AS amount_pts,
+        CASE WHEN coalesce(b.top_bin_share, 0) >= 0.5
+               OR coalesce(s.sequential_last4_share, 0) >= 0.3 THEN 10 ELSE 0 END   AS pattern_pts
+    FROM peak p
+    LEFT JOIN bin_share b USING (entity_type, entity_id)
+    LEFT JOIN sequence_share s USING (entity_type, entity_id)
+)
+SELECT
+    entity_type,
+    entity_id,
+    CAST(round(least(velocity_pts + card_pts + decline_pts + amount_pts + pattern_pts, 100)) AS INTEGER)
+        AS risk_score,
+    list_filter([
+        CASE WHEN attempts_10m >= 10 THEN 'HIGH_VELOCITY' END,
+        CASE WHEN cards_10m >= 8 THEN 'MANY_DISTINCT_CARDS' END,
+        CASE WHEN decline_rate_10m >= 0.5 AND attempts_10m >= 5 THEN 'HIGH_DECLINE_RATE' END,
+        CASE WHEN median_amount_10m <= 2 THEN 'MICRO_AMOUNTS' END,
+        CASE WHEN top_bin_share >= 0.5 THEN 'SHARED_BIN' END,
+        CASE WHEN sequential_last4_share >= 0.3 THEN 'SEQUENTIAL_LAST4' END
+    ], lambda x: x IS NOT NULL) AS reason_codes,
+    CASE WHEN risk_score >= 80 THEN 'block'
+         WHEN risk_score >= 60 THEN 'step_up'
+         ELSE 'allow' END AS recommended_action,
+    CASE WHEN risk_score >= 80 THEN 'Block ' || entity_type || ' and rate limit payment attempts'
+         WHEN risk_score >= 60 THEN 'CAPTCHA at checkout for this ' || entity_type
+         ELSE 'No action' END AS action_detail,
+    window_start, window_end, attempts_10m, cards_10m AS distinct_cards_10m, decline_rate_10m,
+    median_amount_10m, round(top_bin_share, 3) AS top_bin_share,
+    round(sequential_last4_share, 3) AS sequential_last4_share
+FROM scored;
+
+
+-- Cards a flagged burst proved to be live, and whether they were later used for a real purchase.
+-- This is what an analyst blocks next: the burst IP is gone, but the validated cards come back
+-- days later from a different IP ("cash-out").
+CREATE OR REPLACE TABLE card_testing_validated_cards AS
+WITH flagged AS (
+    SELECT * FROM detect_card_testing WHERE recommended_action <> 'allow'
+),
+validated AS (
+    SELECT DISTINCT a.card_fingerprint, f.entity_type, f.entity_id, f.window_end
+    FROM payment_attempts a
+    JOIN flagged f
+      ON (f.entity_type = 'ip' AND a.ip = f.entity_id)
+      OR (f.entity_type = 'device' AND a.device_id = f.entity_id)
+    WHERE a.result = 'approved' AND a.amount <= 5
+      AND a.ts BETWEEN f.window_end - INTERVAL 1 HOUR AND f.window_end + INTERVAL 1 HOUR
+)
+SELECT
+    v.card_fingerprint,
+    any_value(v.entity_type || ':' || v.entity_id) AS tested_from,
+    min(v.window_end) AS validated_at,
+    count(DISTINCT c.txn_id) AS later_charges,
+    coalesce(sum(c.amount), 0) AS later_charge_amount,
+    min(c.ts) AS first_later_charge_ts
+FROM validated v
+LEFT JOIN payment_attempts c
+  ON c.card_fingerprint = v.card_fingerprint
+ AND c.result = 'approved' AND c.amount > 5 AND c.ts > v.window_end
+GROUP BY v.card_fingerprint;
