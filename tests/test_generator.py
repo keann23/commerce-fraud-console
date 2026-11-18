@@ -35,10 +35,11 @@ def test_travelers_exist_and_never_exceed_plane_speed(small_db):
                                  WHERE l.country <> u.country""")
     impossible = scalar(small_db, """
         WITH pairs AS (
-            SELECT lat, lon, ts, lag(lat) OVER w AS plat, lag(lon) OVER w AS plon, lag(ts) OVER w AS pts
+            SELECT user_id, lat, lon, ts, lag(lat) OVER w AS plat, lag(lon) OVER w AS plon, lag(ts) OVER w AS pts
             FROM logins WINDOW w AS (PARTITION BY user_id ORDER BY ts))
         SELECT count(*) FROM pairs
-        WHERE pts IS NOT NULL AND haversine_km(plat, plon, lat, lon) > 500
+        WHERE user_id NOT IN (SELECT entity_id FROM ground_truth WHERE label = 'attack')
+          AND pts IS NOT NULL AND haversine_km(plat, plon, lat, lon) > 500
           AND travel_speed_kmh(plat, plon, pts, lat, lon, ts) > 900""")
     assert abroad > 0
     assert impossible == 0, "legit travelers must move at plausible speeds"

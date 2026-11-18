@@ -15,6 +15,7 @@ from src.db import connect
 PATTERNS = {
     "card_testing": {"table": "detect_card_testing", "entity_types": ["ip", "device"]},
     "trial_abuse": {"table": "detect_trial_abuse", "entity_types": ["user"]},
+    "ato": {"table": "detect_ato", "entity_types": ["user"]},
 }
 
 

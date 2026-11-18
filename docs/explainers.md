@@ -92,3 +92,35 @@ Results on seed 42 (10 rings, 268 abuse accounts, 155 lookalikes): recall 0.993,
 
 **Likely interview question.** *"A family shares a laptop and a credit card. Why don't you flag them?"*
 Short answer: sharing is normal; what separates abuse is never paying. A family cluster has 2 to 4 trials and usually someone converts, so the no-conversion points (the biggest component) stay low, and the card points only fire at 5+ accounts on one card or for virtual cards. The family is in the test data on purpose, and they score at most 43.
+
+---
+
+## 4. Account takeover (ATO)
+
+**What the attack is.** A crew with passwords leaked from other sites tries them on our login page ("credential stuffing"), gets into real, long-standing accounts, locks the owner out and spends on the stored or a newly added card. The customer is the victim here, so the response has to protect them, not punish them.
+
+**How it shows up in the data.** `sql/detect/ato.sql` first finds **anchor logins**: successful logins that are unusual for that account (a device with no earlier successful login, a country never logged in from, or one that follows an impossible-travel hop). It then looks at the 48 hours after the anchor, **from the same device**:
+
+| Signal | Points | Why it matters |
+|---|---|---|
+| New device | 10 | Attacker isn't on the owner's hardware |
+| New country | 15 | Crews operate from elsewhere |
+| Impossible travel (> 900 km/h, > 500 km) | 20 | Owner at home in Paris, "owner" in Singapore an hour later |
+| Password reset | 10 | Locks the owner out |
+| Email change after the reset | 15 | Cuts off recovery and alerts: the clearest tell |
+| New payment method | 10 | The crew's own or a stolen card |
+| High-value purchase or plan upgrade | 10 | Monetization |
+| Device used on 3+ accounts | 10 | Stuffing crews reuse machines |
+
+Two design choices worth defending:
+- **"New" means no earlier *successful* login.** Crews guess a few passwords from the same device first. If failed attempts counted as history, the successful login would look familiar.
+- **14-day warm-up.** The dataset's login history starts at day 0, so for the first two weeks every device looks new. Detection ignores anchors in that period; a real system has years of history.
+
+Results on seed 42 (8 campaigns, 94 victims, 72 lookalikes): recall 0.99, precision 1.00, false positive rate 0. Legit accounts never scored above 25 (new device + new country: a traveler with a new phone). Attacks averaged 88. The one miss scored 55: the crew logged in from a country that victim had already visited, so the new-country and impossible-travel points never fired.
+
+**Why this response.** 60 to 84 → **step up**: force MFA re-authentication and freeze email and payment changes for 72 hours. 85+ → **review**: kill sessions, verify the owner through the *original* email, roll back the email and card changes, refund the charge. Never **block**: banning the account punishes the victim (a test enforces this). Friction cost: a legit traveler with a new phone at most gets an MFA prompt, which they can pass.
+
+**One limitation.** The anchor relies on device and country being new. A crew using residential proxies in the victim's own city, with a spoofed copy of the victim's device fingerprint, only shows up through the account changes, which caps the score around 55 (exactly the miss above). Real teams add behavioural biometrics (typing, navigation speed), check leaked-credential databases at login, and give a "reset then email change" chain weight on its own regardless of device.
+
+**Likely interview question.** *"How is impossible travel computed, and how does it produce false positives?"*
+Short answer: haversine distance between consecutive logins divided by the time between them; over 900 km/h (faster than a plane) is impossible. False positives come from IP geolocation error (mobile carriers, VPNs, corporate egress in another city), so I also require 500+ km, and in production I'd discount hops involving VPN or hosting IPs.

@@ -8,12 +8,14 @@ import numpy as np
 
 from src import config as C
 from src.db import append_tables, create_fresh_database, refresh_derived_columns
+from src.generate.attacks.ato import inject_ato
 from src.generate.attacks.card_testing import CARD_PATTERNS, inject_card_testing
 from src.generate.attacks.trial_abuse import inject_trial_abuse
 from src.generate.baseline import generate
 
 DEFAULT_CARD_TESTING_CAMPAIGNS = 12
 DEFAULT_TRIAL_ABUSE_CAMPAIGNS = 10
+DEFAULT_ATO_CAMPAIGNS = 8
 
 
 def inject_default_attacks(con, seed: int) -> list[str]:
@@ -38,6 +40,14 @@ def inject_default_attacks(con, seed: int) -> list[str]:
             n_devices=int(rng.integers(1, 4)),
             n_virtual_cards=int(rng.integers(1, 4)),
             student_variant=i % 4 == 3,
+        ))
+    for i in range(DEFAULT_ATO_CAMPAIGNS):
+        campaigns.append(inject_ato(
+            con, seed=seed * 3000 + i,
+            n_victims=int(rng.integers(5, 16)),
+            impossible_travel_rate=float(rng.uniform(0.2, 0.7)),
+            monetize_rate=float(rng.uniform(0.5, 1.0)),
+            n_devices=int(rng.integers(1, 4)),
         ))
     return campaigns
 
