@@ -1,5 +1,7 @@
 # Commerce Fraud Investigator Console
 
+**▶ Live demo: https://commerce-fraud-console.streamlit.app** (first load can take a minute if the app was asleep)
+
 A working fraud analyst console for a simulated Adobe-style subscription business. It generates realistic customers, payments, logins, trials, product usage and disputes; injects four real-world abuse patterns on demand; detects them in plain SQL; and recommends a response that balances fraud loss against customer friction.
 
 > **All data in this project is synthetic.** It is generated with Faker and a fixed random seed. No real people, cards, accounts or companies' data are involved. "Adobe-style" describes the business model being simulated (Creative Cloud-like plans, trials, student pricing), not Adobe data.
