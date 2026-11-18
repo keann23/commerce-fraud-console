@@ -15,8 +15,8 @@ from datetime import timedelta
 import numpy as np
 
 from src import config as C
-from src.generate.attacks.common import (DAY, END_SEC, CampaignWriter, add_device, add_payment_method,
-                                         add_txn, random_bin, random_ip, to_ts)
+from src.generate.attacks.common import (DAY, END_SEC, CampaignWriter, add_device,
+                                         add_genuine_fraud_dispute, add_payment_method, add_txn, random_bin, random_ip, to_ts)
 from src.generate.geo import haversine_km
 
 HISTORY_WARMUP_DAYS = 14   # detection ignores logins before this, so attacks start after it
@@ -61,6 +61,7 @@ def inject_ato(con, seed: int, n_victims: int = 10, impossible_travel_rate: floa
             txn_id = add_txn(w, victim["user_id"], pm_id, t_buy, float(rng.choice(HIGH_VALUE_PURCHASES)), "charge",
                              "approved", None, ip, device)
             w.truth("txn", txn_id, t_buy)
+            add_genuine_fraud_dispute(w, rng, txn_id, t_buy, rate=0.7)  # owner sees the charge, disputes it
         w.truth("user", victim["user_id"], t)
     for device in crew_devices:
         w.truth("device", device, start)

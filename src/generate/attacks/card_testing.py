@@ -12,7 +12,8 @@ from faker import Faker
 
 from src import config as C
 from src.generate.attacks.common import (DAY, END_SEC, CampaignWriter, add_device, add_payment_method,
-                                         add_txn, random_bin, random_ip, stable_hash, to_ts)
+                                         add_genuine_fraud_dispute, add_txn, random_bin, random_ip,
+                                         stable_hash, to_ts)
 
 ATTACK_DECLINE_REASONS = ["do_not_honor", "invalid_card", "stolen_card", "incorrect_cvc", "insufficient_funds"]
 CARD_PATTERNS = ["same_bin", "sequential_last4", "random"]
@@ -58,6 +59,7 @@ def inject_card_testing(con, seed: int, attempts: int = 250, duration_minutes: i
             txn_id = add_txn(w, account, pm_id, cashout_at, C.PLAN_PRICES["all_apps"], "charge", "approved",
                           None, cashout_ip, devices[0])
             w.truth("txn", txn_id, cashout_at)
+            add_genuine_fraud_dispute(w, rng, txn_id, cashout_at, rate=0.6)  # real cardholder notices
 
     for ip in ips:
         w.truth("ip", ip, start)

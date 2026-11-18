@@ -43,9 +43,10 @@ def random_ip(rng) -> str:
 
 
 def next_campaign_id(con, attack_type: str) -> str:
-    n = con.execute("SELECT count(DISTINCT campaign_id) FROM ground_truth WHERE attack_type = ?",
-                    [attack_type]).fetchall()[0][0]
-    return f"{CAMPAIGN_PREFIX[attack_type]}-{n + 1:03d}"
+    prefix = CAMPAIGN_PREFIX[attack_type]
+    n = con.execute("SELECT count(DISTINCT campaign_id) FROM ground_truth WHERE campaign_id LIKE ?",
+                    [f"{prefix}-%"]).fetchall()[0][0]
+    return f"{prefix}-{n + 1:03d}"
 
 
 class CampaignWriter:
@@ -72,9 +73,10 @@ class CampaignWriter:
         self.rows.setdefault(table, []).append(row)
         return row
 
-    def truth(self, entity_type: str, entity_id: str, sec: float, label: str = "attack"):
+    def truth(self, entity_type: str, entity_id: str, sec: float, label: str = "attack",
+              attack_type: str | None = None):
         self.add("ground_truth", entity_type=entity_type, entity_id=entity_id, campaign_id=self.campaign_id,
-                 attack_type=self.attack_type, injected_ts=to_ts(sec), label=label)
+                 attack_type=attack_type or self.attack_type, injected_ts=to_ts(sec), label=label)
 
     def flush(self) -> str:
         tables = {name: pd.DataFrame(rows) for name, rows in self.rows.items()}
@@ -109,3 +111,26 @@ def add_txn(w: CampaignWriter, user_id, pm_id, sec, amount, txn_type, result, re
     w.add("transactions", txn_id=txn_id, user_id=user_id, pm_id=pm_id, ts=to_ts(sec), amount=round(amount, 2),
           currency="USD", txn_type=txn_type, result=result, decline_reason=reason, ip=ip, device_id=device_id)
     return txn_id
+
+
+def add_dispute(w: CampaignWriter, rng, txn_id: str, txn_sec: float, reason: str,
+                force_visible: bool = False) -> str | None:
+    """File a dispute with the shared lag model. Returns None if it lands after the window ends,
+    unless force_visible, which redraws the lag (used when a scenario needs an observable dispute)."""
+    from src.generate.disputes import dispute_row
+    for _ in range(50 if force_visible else 1):
+        dispute_id = w.new_id("disputes")
+        row = dispute_row(rng, dispute_id, txn_id, to_ts(txn_sec), reason)
+        if row:
+            w.add("disputes", **row)
+            return dispute_id
+    return None
+
+
+def add_genuine_fraud_dispute(w: CampaignWriter, rng, txn_id: str, txn_sec: float, rate: float):
+    """The real cardholder disputes a charge they truly didn't make. For friendly-fraud detection this is
+    the hardest lookalike: an 'unauthorized' dispute that is honest."""
+    if rng.random() < rate:
+        dispute_id = add_dispute(w, rng, txn_id, txn_sec, "unauthorized")
+        if dispute_id:
+            w.truth("dispute", dispute_id, txn_sec, label="lookalike", attack_type="friendly_fraud")

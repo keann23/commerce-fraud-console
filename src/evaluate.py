@@ -16,6 +16,7 @@ PATTERNS = {
     "card_testing": {"table": "detect_card_testing", "entity_types": ["ip", "device"]},
     "trial_abuse": {"table": "detect_trial_abuse", "entity_types": ["user"]},
     "ato": {"table": "detect_ato", "entity_types": ["user"]},
+    "friendly_fraud": {"table": "detect_friendly_fraud", "entity_types": ["dispute"]},
 }
 
 

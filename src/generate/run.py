@@ -10,12 +10,14 @@ from src import config as C
 from src.db import append_tables, create_fresh_database, refresh_derived_columns
 from src.generate.attacks.ato import inject_ato
 from src.generate.attacks.card_testing import CARD_PATTERNS, inject_card_testing
+from src.generate.attacks.friendly_fraud import inject_friendly_fraud
 from src.generate.attacks.trial_abuse import inject_trial_abuse
 from src.generate.baseline import generate
 
 DEFAULT_CARD_TESTING_CAMPAIGNS = 12
 DEFAULT_TRIAL_ABUSE_CAMPAIGNS = 10
 DEFAULT_ATO_CAMPAIGNS = 8
+DEFAULT_FRIENDLY_FRAUD_CAMPAIGNS = 4
 
 
 def inject_default_attacks(con, seed: int) -> list[str]:
@@ -48,6 +50,12 @@ def inject_default_attacks(con, seed: int) -> list[str]:
             impossible_travel_rate=float(rng.uniform(0.2, 0.7)),
             monetize_rate=float(rng.uniform(0.5, 1.0)),
             n_devices=int(rng.integers(1, 4)),
+        ))
+    for i in range(DEFAULT_FRIENDLY_FRAUD_CAMPAIGNS):
+        campaigns.append(inject_friendly_fraud(
+            con, seed=seed * 4000 + i,
+            n_customers=int(rng.integers(10, 21)),
+            big_purchase_rate=float(rng.uniform(0.3, 0.7)),
         ))
     return campaigns
 

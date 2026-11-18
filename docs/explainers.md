@@ -124,3 +124,31 @@ Results on seed 42 (8 campaigns, 94 victims, 72 lookalikes): recall 0.99, precis
 
 **Likely interview question.** *"How is impossible travel computed, and how does it produce false positives?"*
 Short answer: haversine distance between consecutive logins divided by the time between them; over 900 km/h (faster than a plane) is impossible. False positives come from IP geolocation error (mobile carriers, VPNs, corporate egress in another city), so I also require 500+ km, and in production I'd discount hops involving VPN or hosting IPs.
+
+---
+
+## 5. Friendly fraud and the chargeback lifecycle
+
+**What the attack is.** A real, long-standing customer buys something (often a big annual plan), keeps using it, then tells their bank the charge was "unauthorized" to get their money back. The account and the card are genuine; the claim is not. It's the most common kind of chargeback for subscription businesses, and the hardest to see, because nothing about the account is fraudulent.
+
+**How it shows up in the data.** `sql/detect/friendly_fraud.sql` scores every dispute filed as `unauthorized` by asking whether the purchase looked like the customer themselves:
+
+| Signal | Points | Friendly fraud | Honest "unauthorized" dispute |
+|---|---|---|---|
+| Same device as earlier approved purchases | 25 | Yes, their own laptop | Stolen card: new device; ATO: crew's device |
+| Same IP as earlier approved purchases | 15 | Home network | Elsewhere |
+| Tenure at purchase (180+ days) | 10 | Years | Fresh fraud account |
+| 3+ earlier approved charges, no earlier disputes | 10 | Yes | Sometimes (see below) |
+| Usage after the purchase (300+ minutes) | 25 | Heavy | None, or the ATO owner's normal usage |
+| Logins from the purchase device afterwards | 15 | Yes | No |
+
+Results on seed 42 (61 friendly fraud disputes, 219 honest unauthorized disputes): recall 1.00, false positive rate 0. Friendly fraud scored at least 90, honest disputes at most 50. The 50s are instructive: card testing fraud accounts that made several cash-out charges on their own device look "consistent" with their own history. They fall short only because the account is days old and nobody uses the product. **Consistency means nothing without tenure and usage.**
+
+**Chargeback lifecycle (`src/generate/disputes.py`).** Every dispute, legit or fraud, uses one lag model: lognormal, median about 30 days, mostly 2 to 8 weeks, tail to 120. Disputes that would be filed after the data ends are not visible yet, so the last month looks cleaner than it is (a test checks this). Practical consequence: never judge a rule change on last week's chargeback rate. Wait for labels to mature, or use a maturity curve to project the final rate.
+
+**Why this response.** 60+ → **review**, which here means *represent* the dispute (fight it with evidence: device and IP match, usage after purchase, purchase history) and **never block the customer**. They're still a paying customer, and blocking them turns a $60 dispute into lost lifetime value. Below 60 → accept the chargeback; it looks like genuine third-party fraud, and fighting it would lose anyway while annoying the real cardholder's bank.
+
+**One limitation.** Usage after purchase is account-level. In a real ATO, the owner keeps using their account too, so usage alone can't separate the two; the device and IP of the *purchase* do. A real team would tie usage sessions to devices, and pull in issuer-side data such as Visa Compelling Evidence 3.0 (two prior undisputed transactions with matching device or IP), which formalizes this exact rule.
+
+**Likely interview question.** *"Why not just block customers who file friendly fraud disputes?"*
+Short answer: because winning the dispute and keeping the customer are both worth more than banning them. The right move is to represent with evidence, and only escalate (require a non-disputable payment method, or end the relationship) for repeat offenders.

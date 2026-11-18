@@ -18,7 +18,8 @@ make app     # launch the Streamlit console (coming soon)
 - [x] Card testing: injector with lookalikes, detection SQL, evaluation (recall 1.00, FPR 0 on seed 42)
 - [x] Trial abuse: email normalization, identity graph, detection, evaluation (recall 0.99, FPR 0 on seed 42)
 - [x] Account takeover: anchor logins, impossible travel, ordered event chain (recall 0.99, FPR 0 on seed 42)
-- [ ] Response ladder, friendly fraud
+- [x] Friendly fraud and chargeback lifecycle (recall 1.00, FPR 0 on seed 42)
+- [ ] Response ladder
 - [ ] Streamlit screens and deployment
 
 See `docs/explainers.md` for the reasoning behind each design choice.
