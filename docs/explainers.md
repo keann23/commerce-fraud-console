@@ -178,3 +178,63 @@ On seed 42, at a threshold of 40, both policies stop about $103.3k of fraud. **B
 
 **Likely interview question.** *"How would you pick the threshold?"*
 Short answer: minimize expected cost, which is missed fraud dollars plus friction cost on legit customers, using matured labels. The tradeoff curve shows it directly. Then re-check monthly, because attackers adapt and the label delay means the last few weeks always look better than they are.
+
+---
+
+## 7. Phase 2: dbt port
+
+**What it is.** The whole detection pipeline as a dbt-duckdb project: 14 models (features → detections → response ladder) with dbt's lineage graph and 26 tests (no nulls in required columns, valid ladder steps, scores 0 to 100, one score per entity, ATO victims and friendly-fraud customers never blocked).
+
+**How it's built.** The dbt models are *generated* from `sql/` by `dbt/sync_from_sql.py`: each `CREATE OR REPLACE TABLE x AS ...` becomes `models/<layer>/x.sql`, with table names swapped for `{{ ref() }}` and `{{ source() }}`. `sql/` stays the single source of truth; a test fails if someone edits `sql/` without regenerating. dbt builds into its own `dbt` schema, and `dbt/check_parity.py` compares all 14 tables with the plain-SQL output, row for row in both directions.
+
+**What it found.** The parity check caught two real nondeterminism bugs in the original SQL: `any_value()` choosing which IP/device a card was "tested from" (DuckDB may return any matching row), and money sums whose last bits depended on parallel summation order. Both broke the project's "same seed, same results" rule silently; both are fixed.
+
+**One limitation.** Generating dbt from plain SQL means dbt features that need Jinja in the model body (incremental models, macros per model) aren't used. If the team moved to dbt for real, dbt would become the source of truth and `sql/` would be retired.
+
+**Likely interview question.** *"Why generate dbt instead of just porting it?"*
+Short answer: two hand-maintained copies of detection logic will drift, and a drifted rule is a silent production bug. Generating one from the other, with a test that fails on drift and a parity check on the outputs, gives dbt's lineage and tests without a second copy to maintain.
+
+---
+
+## 8. Phase 2: Splunk SPL versions
+
+**What it is.** The four detections rewritten in SPL, over the warehouse exported as JSON event logs (`fraud:payments`, `fraud:logins`, `fraud:account_events`, and so on).
+
+**How it maps.** Rolling SQL windows become `streamstats time_window=10m`; `lag()` becomes `streamstats current=f last()`; "no earlier successful login from this device" becomes a running count per user and device; the ATO 48-hour chain carries the latest anchor forward per account with `streamstats last()`.
+
+**What doesn't translate.** SPL has no recursion, so trial abuse's connected components become a one-hop grouping (accounts sharing one device, card or inbox). Rings chained only through different links can split. `splunk/README.md` has the full SQL → SPL table.
+
+**One limitation.** The SPL hasn't been run in a live Splunk from this repo; the export is tested, the searches are reviewed against the SQL they mirror.
+
+**Likely interview question.** *"When would you use SPL instead of SQL?"*
+Short answer: SPL for near-real-time alerting on raw logs, where security and fraud operations already work; warehouse SQL for batch scoring, backtests and evaluation over months of history. Same logic, different strengths: SQL has recursion and set operations, SPL has streaming windows over events.
+
+---
+
+## 9. Phase 2: weekly intel brief
+
+**What it is.** A weekly report: alerts by pattern, flagged exposure, approved revenue, decline rates, micro-auth volume, trial starts and disputes, each compared with last week and the 4-week average, plus the top alerts by exposure.
+
+**How it works.** The numbers are computed in SQL (`src/intel_brief.py`). The write-up comes from a deterministic template by default, or from Claude when an API key is configured. Claude only receives aggregate numbers (never customer rows), is told to use only figures present in the facts, and server-side fallbacks are on; if it declines, the template is used.
+
+**Why this design.** An LLM is good at turning a table of deltas into a readable narrative, but the numbers must be traceable. Keeping computation in SQL and showing "the exact numbers the brief was written from" next to the text makes every claim checkable.
+
+**One limitation.** "Use only these numbers" is an instruction, not a guarantee. A production version would check every number in the generated text against the facts automatically before sending.
+
+**Likely interview question.** *"How do you stop the LLM from making things up in a report?"*
+Short answer: give it only computed facts, forbid figures outside them, show the facts beside the output, and in production add an automated check that every number in the text appears in, or is derivable from, the facts.
+
+---
+
+## 10. Phase 2: IEEE-CIS validation
+
+**What it is.** A pipeline that tests whether this project's signal ideas carry information on real labelled fraud: the Kaggle IEEE-CIS dataset (e-commerce transactions with an `isFraud` label).
+
+**How it maps.** There's no customer id, login or dispute data, so each idea gets its closest proxy: a reconstructed customer id (card1 + addr1 + the day the card was first seen), card velocity in the previous hour, micro amounts, anonymous email domains, a new device for a known customer, amount spikes, cards first seen today, and buyer/recipient email mismatch. For each signal: lift over the base fraud rate, and what share of fraud it covers. For a fixed-weight combined score: AUC, plus precision and recall at a 1/5/10% alert budget.
+
+**Status.** Tested end to end on a small fake fixture with planted signals. Real results need the Kaggle download (account + accepting the competition rules); `make ieee` then writes `docs/ieee_validation.md`.
+
+**One limitation.** `isFraud` in IEEE-CIS is chargeback-based, so it mixes true fraud and friendly fraud; and the anonymized columns only approximate customers and devices. Lift here supports an idea; it doesn't calibrate the simulator's thresholds.
+
+**Likely interview question.** *"Your project is synthetic, so how do you know any of it works?"*
+Short answer: the synthetic data proves the logic separates attacks from realistic lookalikes; the IEEE-CIS replication checks that the same signals carry lift on real labelled fraud. Then I'd be honest that thresholds would need re-tuning on the company's own data.

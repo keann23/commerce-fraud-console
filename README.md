@@ -85,7 +85,7 @@ Other headline numbers:
 
 The console doubles as a teaching simulator: the whole fraud loop (attack → detect → decide → measure) on safe synthetic data where the answers are known.
 
-- **Learning Guide** page: why the simulator exists, the four attacks at a glance, how the pipeline works, an 11-step guided path with exercises, and a searchable glossary of ~30 fraud and payments terms.
+- **Learning Guide** page: why the simulator exists, the four attacks at a glance, how the pipeline works, a 12-step guided path with exercises, and a searchable glossary of ~30 fraud and payments terms.
 - **Every screen** opens with what it is, why it matters in a real fraud team, how to use it, what to look for, and things to try.
 - **💡 lessons** sit next to the key charts and tables, and every Attack Mode slider explains what it changes.
 - A **Learning mode** switch in the sidebar hides all of it for a clean demo.
@@ -98,7 +98,7 @@ The console doubles as a teaching simulator: the whole fraud loop (attack → de
 | **Case Queue:** alerts by risk, reason codes, exposure, analyst decisions | **Ring Explorer:** identity graph of accounts linked by device, card and normalized email; card testing bursts with their cash-outs |
 | **Case File:** one account's timeline (logins, events, payments, disputes, usage), linked entities, Approve / Step-up / Review / Block buttons that are logged | **Friction Tradeoff:** threshold slider, block-only vs ladder: fraud stopped vs false declines and revenue lost |
 | **Dispute Lifecycle:** lag histogram, label maturity curve, weekly dispute ratio, win rate by reason | **Evidence Pack:** one-click PDF to represent a friendly fraud dispute |
-| **Rule Simulator:** write a SQL `WHERE` clause over payment attempts and backtest it | |
+| **Rule Simulator:** write a SQL `WHERE` clause over payment attempts and backtest it | **Intel Brief:** weekly trends by pattern written up as a brief, by template or by Claude |
 
 ![Ring Explorer](docs/img/ring_explorer.jpg)
 ![Friction Tradeoff](docs/img/friction_tradeoff.jpg)
@@ -134,8 +134,12 @@ sql/schema.sql, sql/macros.sql  tables; email normalization, haversine, travel s
 sql/features/                   payment attempts, identity graph, txn features
 sql/detect/                     card_testing, trial_abuse, ato, friendly_fraud
 sql/response_ladder.sql         ladder steps, friction, $ exposure, alerts
-app/                            Streamlit console (Home + 8 pages)
-tests/                          50 tests: determinism, macros, recall/FPR minimums, ladder, guards
+app/                            Streamlit console (Home + 10 pages)
+dbt/                            dbt-duckdb port generated from sql/, with tests and a parity check
+splunk/                         log export, props.conf and SPL searches
+src/intel_brief.py              weekly metrics + brief writers
+src/ieee/, sql/ieee/            IEEE-CIS validation
+tests/                          tests: determinism, macros, recall/FPR minimums, ladder, guards
 docs/explainers.md              plain-English explainer and interview Q&A for every pattern
 ```
 
@@ -145,8 +149,20 @@ docs/explainers.md              plain-English explainer and interview Q&A for ev
 - Collapsed 3,983 "unique" trial accounts into 3,588 real identities via email normalization and device/card graph linking in SQL, exposing 9.9% trial inflation; 266 abusive accounts traced to 10 people
 - Designed a response ladder (allow, step-up, review, block) that cut false declines 95% (288 → 14) versus block-only at equal fraud capture
 
-## Next (Phase 2)
+## Phase 2
 
-- Validate detection ideas on the real IEEE-CIS fraud dataset
-- Port SQL to dbt-duckdb; replicate key investigations in Splunk SPL
-- Weekly intel brief: an LLM-written summary of trends from the metrics tables
+| Piece | What it is | Status |
+|---|---|---|
+| **dbt port** (`dbt/`) | All 14 SQL models as a dbt-duckdb project, **generated from `sql/`** so there is one source of truth, with 26 dbt tests. `make dbt` builds it and proves every table matches the plain-SQL pipeline row for row. | Done. The parity check caught two nondeterminism bugs in the original SQL, both fixed |
+| **Splunk SPL** (`splunk/`) | JSON event-log export (one sourcetype per stream), `props.conf`, and SPL versions of all four detections, plus a SQL → SPL concept map | Export tested; SPL written but not yet run in a live Splunk |
+| **Weekly intel brief** (Intel Brief screen, `make brief`) | Weekly metrics in SQL, written up by a deterministic template or, with an `ANTHROPIC_API_KEY`, by Claude (`claude-opus-5-5`) from the same aggregate numbers only | Done; the Claude writer is tested with a stub client |
+| **Threat memo** ([`docs/threat_memo.md`](docs/threat_memo.md)) | Ranked commercial-abuse threats for a creative-software subscription business, with signals, gaps and a 30/60/90 plan | Done |
+| **IEEE-CIS validation** (`src/ieee/`, `sql/ieee/`, `make ieee`) | Maps each simulator signal to a real-data proxy and measures lift, coverage and ranking on the Kaggle IEEE-CIS dataset | Pipeline tested on a fixture; needs the Kaggle download to produce real results |
+
+```bash
+pip install -r requirements-dev.txt   # dbt-core + dbt-duckdb
+make dbt      # regenerate dbt models from sql/, dbt build (models + tests), parity check
+make splunk   # export data/splunk/*.json for Splunk
+make brief    # print the latest weekly intel brief
+make ieee     # after downloading IEEE-CIS into data/ieee/
+```

@@ -13,7 +13,7 @@ st.caption("A fraud analyst console and learning simulator for an Adobe-style su
 with st.expander("🎯 What this simulator is for", expanded=learning_mode()):
     st.markdown(PURPOSE)
     st.markdown("**Suggested path:** Learning Guide → Overview → Attack Mode → Case Queue → Case File → "
-                "Ring Explorer → Friction Tradeoff → Dispute Lifecycle → Evidence Pack → Rule Simulator.")
+                "Ring Explorer → Friction Tradeoff → Dispute Lifecycle → Evidence Pack → Rule Simulator → Intel Brief.")
 page_intro("overview")
 
 cur = cursor()

@@ -68,6 +68,7 @@ PATH = [
     ("Dispute Lifecycle", "Read the maturity curve at day 30. Why should you never judge last week's fraud rate at face value?"),
     ("Evidence Pack", "Download a PDF. Which piece of evidence would convince a bank most?"),
     ("Rule Simulator", "Run the 'Too broad' example, then tighten it until precision is above 90%."),
+    ("Intel Brief", "Read the latest weekly brief, then open the exact numbers behind it. Can you trace every figure?"),
 ]
 done = 0
 for i, (screen, task) in enumerate(PATH):
