@@ -130,7 +130,7 @@ docs/explainers.md              plain-English explainer and interview Q&A for ev
 
 ## Resume bullets
 
-- Built a commerce fraud investigation console (Python, SQL, DuckDB, Streamlit) simulating an Adobe-style subscription business, detecting card testing, account takeover, trial abuse and friendly fraud at 99 to 100% recall with 0% false positives on 850 deliberately built legit lookalikes
+- Built a commerce fraud investigation console (Python, SQL, DuckDB, Streamlit) simulating an Adobe-style subscription business, detecting card testing, account takeover, trial abuse and friendly fraud at 99 to 100% recall with 0% false positives on ~850 deliberately built legit lookalikes
 - Collapsed 3,983 "unique" trial accounts into 3,588 real identities via email normalization and device/card graph linking in SQL, exposing 9.9% trial inflation; 266 abusive accounts traced to 10 people
 - Designed a response ladder (allow, step-up, review, block) that cut false declines 95% (288 → 14) versus block-only at equal fraud capture
 
